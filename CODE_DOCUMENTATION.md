@@ -1,8 +1,8 @@
-# CODE DOCUMENTATION - Nexus Mobile Connect
+# CODE DOCUMENTATION - Nexus Comm-Link
 
 ## Project Structure
 ```text
-nexus_mobile_connect/
+nexus_comm_link/
 ├── server.js                       # Main Node.js server (Express + WebSocket + CDP + HTTPS)
 ├── generate_ssl.js                 # SSL certificate generator (pure Node.js, no OpenSSL needed)
 ├── ui_inspector.js                 # Utility for inspecting Nexus UI via CDP

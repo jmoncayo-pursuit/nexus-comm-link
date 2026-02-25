@@ -1,293 +1,65 @@
-# SECURITY - Nexus Mobile Connect
+# Security Policy
 
-This document explains the security model, HTTPS setup, and how to handle browser warnings.
+This document outlines the security measures, vulnerability reporting procedures, and the underlying security architecture of the Nexus Comm-Link.
 
----
+## Security Overview
 
-## 🔒 HTTPS & SSL Certificates
+Nexus Comm-Link is designed as a secure gateway for remote monitoring of development sessions. It prioritizes local network security while providing optional, authenticated tunnels for global access.
 
-Nexus Mobile Connect supports HTTPS for secure connections between your phone and desktop.
+## Reporting a Vulnerability
 
-### Why HTTPS?
+If you identify a security vulnerability within this project, please report it responsibly.
 
-- **Encrypted Traffic**: All data between your phone and server is encrypted.
-- **No Browser Warning Icon**: Removes the ⚠️ "Not Secure" warning in the address bar.
-- **Professional Experience**: Feels more polished and trustworthy.
+1.  **Do Not Open a Public Issue**: To prevent exploitation, please avoid discussing vulnerabilities in the public issue tracker.
+2.  **Contact**: Send a detailed report to the maintainer [Insert Contact Information].
+3.  **Response Timeline**: You can expect an initial acknowledgement within 48 hours and a full assessment/remediation plan within 7 days.
 
-### Certificate Generation Methods
+## Supported Versions
 
-The `generate_ssl.js` script uses a **hybrid approach**:
+Security updates are provided for the following versions:
 
-| Method | When Used | Benefits |
-|--------|-----------|----------|
-| **OpenSSL** (preferred) | When OpenSSL is installed | Full IP address SAN support, cleaner browser warnings |
-| **Node.js crypto** (fallback) | When OpenSSL not available | Zero dependencies, works everywhere |
+| Version | Status |
+| --- | --- |
+| 2.1.x | Managed / Active |
+| < 2.1.0 | End of Life |
 
-**OpenSSL availability by platform:**
-- **Windows**: Available if Git for Windows is installed
-- **macOS**: LibreSSL built-in (compatible)
-- **Linux**: Usually pre-installed
+## Security Architecture
 
-### Self-Signed vs CA-Signed Certificates
+### 1. Transport Layer Security (TLS)
+The server supports and recommends the use of HTTPS (TLS 1.2/1.3). When certificates are detected in the `certs/` directory, the server automatically initializes in secure mode.
+- **Certificate Support**: The system supports self-signed certificates for local network testing.
+- **Auto-Detection**: The server checks for `server.key` and `server.cert` during the boot sequence.
 
-| Type | Pros | Cons |
-|------|------|------|
-| **Self-Signed** (what we use) | Free, works offline, no domain needed, instant setup | Browser shows warning on first visit |
-| **CA-Signed** (Let's Encrypt, etc.) | No browser warnings | Requires domain name, internet access, periodic renewal |
+### 2. Authentication Model
+The system employs a multi-tiered authentication strategy:
+- **LAN Exemption**: By default, requests originating from the local network (192.168.x.x, 10.x.x.x, etc.) are trusted to provide a seamless development experience within a private workspace.
+- **Global Auth**: Requests arriving via external tunnels or public IPs require a signed session cookie.
+- **Session Tokens**: Authentication is managed via `httpOnly`, signed cookies to prevent client-side script access (XSS mitigation).
 
-For local network use, **self-signed certificates are the practical choice**.
+### 3. Tunneling Security
+When using the remote access mode (`start_nexus_connect_web.sh`), the system utilizes a secure tunnel.
+- **One-Time Passcodes**: If a persistent `APP_PASSWORD` is not configured, the system generates a unique, temporary 6-digit passcode for the session.
+- **Encapsulated Management**: The tunnel and the server are managed as a single lifecycle unit to ensure no orphaned ports remain open after a session ends.
 
----
+### 4. Data Protection
+- **Snapshot Isolation**: DOM snapshots are processed server-side to remove sensitive or unnecessary metadata before transmission to mobile clients.
+- **Input Sanitization**: All commands sent from the mobile interface are strictly sanitized and escaped before injection into the desktop environment via the Chrome DevTools Protocol (CDP).
 
-## ⚠️ "Your Connection is Not Private" Warning
+## Handling Browser Security Warnings
 
-When you first visit the HTTPS URL on your phone, you'll see a warning like:
+When using self-signed certificates, browsers will notify you that the connection is "not private." This is due to the lack of a third-party Certificate Authority (CA).
 
-> **Your connection is not private**  
-> Attackers might be trying to steal your information from 192.168.1.x  
-> `NET::ERR_CERT_AUTHORITY_INVALID`
+### Verification
+You can verify that your connection is encrypted despite the warning:
+1. Click the "Not Secure" or "Warning" icon in the address bar.
+2. View the certificate details.
+3. Confirm the "Subject" matches your local machine's IP address.
 
-### Is This Safe?
+### Bypassing Warnings for Local Development
+- **Chrome/Android**: Advanced > Proceed to [IP Address] (unsafe).
+- **Safari/iOS**: Show Details > Visit this website > Confirm.
 
-**Yes, for your local network.** This warning appears because:
-1. The certificate is "self-signed" (created by you, not a Certificate Authority)
-2. Your browser doesn't recognize the issuer
-3. This is **expected behavior** for local development servers
-
-### How to Bypass (By Browser/Device)
-
-#### Android Chrome
-1. Tap **"Advanced"** at the bottom of the warning page
-2. Tap **"Proceed to 192.168.1.x (unsafe)"**
-
-#### iPhone Safari
-1. Tap **"Show Details"**
-2. Tap **"visit this website"**
-3. Tap **"Visit Website"** in the confirmation popup
-
-#### iPhone Chrome
-1. Tap **"Advanced"**
-2. Tap **"Proceed to 192.168.1.x (unsafe)"**
-
-#### Desktop Chrome/Edge
-1. Click **"Advanced"**
-2. Click **"Proceed to localhost (unsafe)"**
-
-#### Desktop Firefox
-1. Click **"Advanced..."**
-2. Click **"Accept the Risk and Continue"**
-
-### After Accepting
-
-**What you'll see in all browsers:**
-
-All browsers will show **"Not Secure"** but **"Encrypted"** - this is expected!
-
-| Browser | Icon | Message |
-|---------|------|---------|
-| Chrome (Android/Desktop) | 🔴 Red octagon with X | "Not secure" - but encrypted |
-| Safari (iPhone) | ⚠️ Triangle warning | "Not Trusted" - but encrypted |
-| Firefox | 🔴 Red octagon with X | "Not secure" - but encrypted |
-| Edge | 🔴 Red octagon with X | "Not secure" - but encrypted |
-
-**Why "Not Secure" but still encrypted?**
-- ✅ **Your data IS encrypted** with TLS 1.3 / AES-256
-- ❌ The certificate isn't from a trusted Certificate Authority
-- This is **normal and expected** for self-signed certificates
-
-**Key points:**
-- ✅ The initial warning won't appear again (until you clear browser data)
-- ✅ All traffic is encrypted with modern TLS 1.3
-- ✅ Tap the icon → "Connection is encrypted" confirms security
-
----
-
-## 🔑 Passcode Protection (NEW)
-
-To secure your session when accessing it globally, Nexus Mobile Connect now includes a built-in authentication layer.
-
-### How it Works
-1. **Local Access (Wi-Fi)**: The server detects your local IP. Devices on same Wi-Fi are **automatically authenticated**.
-2. **Global Access (Mobile Data)**: Requests from the internet (via ngrok) require a **Passcode**.
-3. **Session Cookies**: Once logged in, your browser stores a secure, signed cookie valid for 30 days.
-
-### Configuration
-1. Copy `.env.example` to `.env`.
-2. Set your custom password and API keys in the `.env` file:
-```env
-APP_PASSWORD=your_secure_password
-XXX_API_KEY=your-ai-provider-key
-```
-*If no password is set, the server will generate a **temporary 6-digit passcode** each time it starts and display it in the terminal.*
-
----
-
-## 🛡️ Security Model
-
-### What's Protected
-
-- **Transport Layer**: All HTTP traffic is encrypted with TLS 1.3 when using HTTPS.
-- **Passcode Protection**: When accessed via the internet (ngrok) or non-local networks, a password/passcode is mandatory to prevent unauthorized access.
-- **Local Exemption**: Intelligent IP detection automatically trusts your local Wi-Fi devices, allowing password-free access at home.
-- **Secure Sessions**: Uses signed, `httpOnly` cookies that are inaccessible to cross-site scripting (XSS) attacks.
-- **Input Sanitization**: User messages are escaped using `JSON.stringify` before CDP injection.
-- **Graceful Shutdown**: Server cleans up connections properly on exit.
-
-### What's NOT Protected
-
-- **Self-Signed Certs**: Not trusted by browsers without manual accept (see "Bypassing Warnings" above).
-- **Physical Access**: Anyone with physical access to your phone or desktop can control the session.
-
-### Remote Access Strategy
-
-| Method | Safety | Recommendation |
-|----------|--------|----------------|
-| **Local Wi-Fi** | 🟢 High | Default mode, no password required. |
-| **_web Mode (ngrok)** | 🟡 Medium | Use `APP_PASSWORD` in `.env` (cloned from `.env.example`) for secure global access. |
-| **Port Forwarding** | 🔴 Low | **NOT RECOMMENDED**. Use the built-in `_web` tunnel instead. |
-
-### Recommendations
-
-| Scenario | Recommendation |
-|----------|----------------|
-| Home network (trusted) | Use as-is, HTTPS recommended |
-| Shared network (office) | Enable HTTPS, consider adding auth |
-| Remote access | Use VPN or SSH tunnel, never expose directly to internet |
-
----
-
-## 🔑 Certificate Management
-
-### Generating Certificates
-
-```bash
-node generate_ssl.js
-```
-
-**What it does:**
-1. Detects your local IP addresses (e.g., 192.168.1.3)
-2. Tries OpenSSL first (if available) - includes IP in certificate SAN
-3. Falls back to Node.js crypto if OpenSSL not found
-4. Creates `certs/server.key` and `certs/server.cert`
-
-**Example output:**
-```
-🔐 Generating self-signed SSL certificate...
-
-📍 Detected IP addresses: 192.168.1.3, 127.0.0.1
-
-🔧 Using OpenSSL for certificate generation...
-
-✅ SSL certificates generated successfully!
-   Method: OpenSSL
-   Key:    ./certs/server.key
-   Cert:   ./certs/server.cert
-   SANs:   localhost, 192.168.1.3, 127.0.0.1
-```
-
-### Web UI Method
-
-If you're already running the server on HTTP:
-1. Look for the yellow **"⚠️ Not Secure"** banner
-2. Click **"Enable HTTPS"** button
-3. Restart the server when prompted
-
-### Regenerating Certificates
-
-If you need a new certificate (e.g., IP changed, expired, or compromised):
-
-```bash
-# Delete old certificates
-rm -rf certs/     # Linux/macOS
-rmdir /s certs    # Windows
-
-# Generate new ones
-node generate_ssl.js
-
-# Restart server
-node server.js
-```
-
-Note: After regenerating, you'll need to accept the browser warning again on all devices.
-
-### Certificate Location
-
-Certificates are stored in `./certs/` and are **gitignored** - they will NOT be committed to version control.
-
-### Verifying Your Certificate
-
-To check which certificate you're using and its details:
-
-**Windows (with Git):**
-```powershell
-& "C:\Program Files\Git\usr\bin\openssl.exe" x509 -in certs/server.cert -text -noout | Select-String -Pattern "Subject:|Issuer:|Not Before|Not After|DNS:|IP Address:"
-```
-
-**macOS/Linux:**
-```bash
-openssl x509 -in certs/server.cert -text -noout | grep -E "Subject:|Issuer:|Not Before|Not After|DNS:|IP Address:"
-```
-
-**Example output:**
-```
-Issuer: C=US, O=NexusMobileConnect, CN=localhost
-Not Before: Jan 17 06:55:13 2026 GMT
-Not After : Jan 17 06:55:13 2027 GMT
-Subject: C=US, O=NexusMobileConnect, CN=localhost
-DNS:localhost, IP Address:192.168.1.3, IP Address:127.0.0.1
-```
-
-**Quick check (any platform):**
-```bash
-node -e "const fs=require('fs'); console.log(fs.existsSync('certs/server.cert') ? '✅ Certificate exists' : '❌ No certificate')"
-```
-
----
-
-## 🌐 Network Security
-
-### Local Network Only
-
-By default, the server binds to `0.0.0.0:3000`, meaning:
-- ✅ Accessible from any device on your LAN
-- ✅ Accessible via `localhost` on the host machine
-- ❌ NOT accessible from the internet (unless you port-forward)
-
-### Firewall Considerations
-
-If you can't connect from your phone:
-1. Check Windows Firewall / macOS Firewall settings
-2. Ensure port 3000 is allowed for Node.js
-3. Verify both devices are on the same Wi-Fi network
-
----
-
-## 🔧 Installing OpenSSL (Optional)
-
-For the best certificate experience (proper IP SAN support), install OpenSSL:
-
-### Windows
-- **Easiest**: Install [Git for Windows](https://git-scm.com/) - includes OpenSSL
-- **Standalone**: Download from [slproweb.com](https://slproweb.com/products/Win32OpenSSL.html)
-
-### macOS
-```bash
-# Already included as LibreSSL, or install via Homebrew:
-brew install openssl
-```
-
-### Linux
-```bash
-# Usually pre-installed, or:
-sudo apt install openssl    # Debian/Ubuntu
-sudo yum install openssl    # RHEL/CentOS
-```
-
----
-
-## 📚 Related Documentation
-
-- [README.md](README.md) - Quick start and HTTPS setup instructions
-- [CODE_DOCUMENTATION.md](CODE_DOCUMENTATION.md) - Technical details of SSL implementation
-- [DESIGN_PHILOSOPHY.md](DESIGN_PHILOSOPHY.md) - Security design decisions
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Security checklist for contributors
+## Best Practices
+- **Rotate Passwords**: Change your `APP_PASSWORD` regularly if using persistent remote access.
+- **Restrict Physical Access**: Ensure your desktop and mobile devices are locked when unattended.
+- **Environment Isolation**: Do not run the Nexus Comm-Link on untrusted or public Wi-Fi networks without an active VPN.

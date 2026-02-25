@@ -746,7 +746,7 @@ async function sendMessage() {
         // Optimistic Thinking State - provide immediate feedback
         const thinkingDiv = document.createElement('div');
         thinkingDiv.id = 'optimisticThinking';
-        thinkingDiv.innerHTML = `<div class="thinking-loader"></div><span>Comm-Link: Relaying query to Neural Core...</span>`;
+        thinkingDiv.innerHTML = `<div class="thinking-loader"></div><span>Comm-Link: Relaying query to Nexus Engine...</span>`;
         chatContent.appendChild(thinkingDiv);
         scrollToBottom('smooth');
 
@@ -1429,7 +1429,7 @@ function linkifyFilePaths() {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openHologram(filePath);
+                openPeek(filePath);
             });
 
             frag.appendChild(link);
@@ -1461,12 +1461,12 @@ function linkifyFilePaths() {
     });
 }
 
-async function openHologram(filePath) {
-    const overlay = document.getElementById('hologramOverlay');
-    const filenameEl = document.getElementById('hologramFilename');
-    const metaEl = document.getElementById('hologramMeta');
-    const codeEl = document.getElementById('hologramCode');
-    const iconEl = document.getElementById('hologramIcon');
+async function openPeek(filePath) {
+    const overlay = document.getElementById('peekOverlay');
+    const filenameEl = document.getElementById('peekFilename');
+    const metaEl = document.getElementById('peekMeta');
+    const codeEl = document.getElementById('peekCode');
+    const iconEl = document.getElementById('peekIcon');
 
     // Show loading state
     const ext = filePath.split('.').pop() || 'txt';
@@ -1494,26 +1494,25 @@ async function openHologram(filePath) {
     }
 }
 
-function closeHologram() {
-    document.getElementById('hologramOverlay').classList.remove('show');
+function closePeek() {
+    document.getElementById('peekOverlay').classList.remove('show');
 }
 
-// Close hologram on overlay click (outside the panel)
-document.getElementById('hologramOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'hologramOverlay') closeHologram();
+// Close peek on overlay click (outside the panel)
+document.getElementById('peekOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'peekOverlay') closePeek();
 });
 
 // ============================================
-//  VOICE-TO-COMMAND — Neural Bridge
+//  VOICE-TO-COMMAND — Remote Relay
 // ============================================
 
-const ELITE_DX_COMMANDS = {
+const COMMAND_SHORTCUTS = {
     'check this': 'Run a diagnostic on the active file and report anomalies.',
-    'fix this': 'Analyze the current file and fix any linting errors.',
-    'clean up': 'Execute the Zero-Shim policy: delete all temporary logs and orphaned result files.',
+    'fix this': 'Analyze the current file and fix any errors.',
+    'clean up': 'Delete all temporary logs and orphaned result files.',
     'ship it': 'Final review of the current changes and prepare for commit.',
-    'analyze': 'Analyze the current draft and identify win conditions.',
-    'review': 'Review the most recent match for mechanical errors.',
+    'analyze': 'Perform a deep analysis of the current code context.',
     'status': 'Give me a full status report on all running services.',
     'what changed': 'Summarize all file changes since the last commit.',
     'explain': 'Explain the logic of the currently open file in simple terms.',
@@ -1596,17 +1595,17 @@ function initVoice() {
 function processVoiceCommand(transcript) {
     const lower = transcript.toLowerCase().trim();
 
-    // Check for exact Elite DX command matches
-    for (const [trigger, command] of Object.entries(ELITE_DX_COMMANDS)) {
+    // Check for exact command matches
+    for (const [trigger, command] of Object.entries(COMMAND_SHORTCUTS)) {
         if (lower === trigger || lower.startsWith(trigger + ' ') || lower.endsWith(' ' + trigger)) {
-            return { command, display: trigger + ' \u2192 Elite DX' };
+            return { command, display: trigger + ' \u2192 Command' };
         }
     }
 
-    // Check for partial matches (e.g., "check this file" matches "check this")
-    for (const [trigger, command] of Object.entries(ELITE_DX_COMMANDS)) {
+    // Check for partial matches
+    for (const [trigger, command] of Object.entries(COMMAND_SHORTCUTS)) {
         if (lower.includes(trigger)) {
-            return { command, display: trigger + ' \u2192 Elite DX' };
+            return { command, display: trigger + ' \u2192 Command' };
         }
     }
 
