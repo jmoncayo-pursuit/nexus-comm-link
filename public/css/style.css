@@ -1,5 +1,5 @@
 :root {
-    /* Nexus Command Lab Theme Tokens */
+    /* Nexus Comm-Link Theme Tokens */
     --bg-app: #020617;
     /* Slate 950 */
     --bg-panel: rgba(15, 23, 42, 0.8);
@@ -42,7 +42,7 @@ input[type="file"]:not(#imageUploadBtn),
     color: var(--accent);
     padding: 14px 24px;
     border-radius: 8px;
-    font-family: 'Orbitron', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
@@ -103,7 +103,7 @@ input[type="file"]:not(#imageUploadBtn),
     background: #22d3ee !important;
     color: #020617 !important;
     padding: 12px 20px !important;
-    font-family: 'Orbitron', sans-serif !important;
+    font-family: 'Outfit', sans-serif !important;
     font-size: 13px !important;
     font-weight: 900 !important;
     text-transform: uppercase !important;
@@ -170,7 +170,7 @@ body {
 
 .header h1 {
     font-size: 14px;
-    font-family: 'Orbitron', 'Inter', sans-serif;
+    font-family: 'Outfit', 'Inter', sans-serif;
     font-weight: 800;
     color: var(--text-main);
     display: flex;
@@ -268,7 +268,7 @@ body {
     cursor: pointer;
     padding: 6px;
     border-radius: 6px;
-    font-family: 'Orbitron', 'Inter', sans-serif;
+    font-family: 'Outfit', 'Inter', sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -365,7 +365,7 @@ body {
     border: none;
     padding: 12px 24px;
     border-radius: 8px;
-    font-family: 'Orbitron', 'Inter', sans-serif;
+    font-family: 'Outfit', 'Inter', sans-serif;
     font-size: 14px;
     font-weight: 800;
     text-transform: uppercase;
@@ -540,8 +540,8 @@ body {
     color: var(--accent);
     padding: 8px 16px;
     border-radius: 4px;
-    /* Tactical sharp edges */
-    font-family: 'Orbitron', 'Inter', sans-serif;
+    /* Clean edges */
+    font-family: 'Outfit', 'Inter', sans-serif;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -582,7 +582,7 @@ body {
     padding: 4px 4px 4px 16px;
     /* Reduced vertical padding */
     border-radius: 4px;
-    /* Sharp tactical edges */
+    /* Clean functional edges */
     border: 1px solid var(--border);
     transition: all 0.2s;
     min-height: 48px;
@@ -992,9 +992,9 @@ textarea::-webkit-scrollbar {
 }
 
 /* ============================================
-   FILE HOLOGRAM — Glassmorphic Peek Protocol
+   FILE PEEK — Modern File Viewer
    ============================================ */
-.hologram-overlay {
+.peek-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.7);
@@ -1006,11 +1006,11 @@ textarea::-webkit-scrollbar {
     align-items: flex-end;
 }
 
-.hologram-overlay.show {
+.peek-overlay.show {
     display: flex;
 }
 
-.hologram-panel {
+.peek-panel {
     width: 100%;
     max-width: 500px;
     max-height: 80vh;
@@ -1025,7 +1025,7 @@ textarea::-webkit-scrollbar {
     box-shadow: 0 -4px 30px rgba(34, 211, 238, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.hologram-header {
+.peek-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1034,13 +1034,13 @@ textarea::-webkit-scrollbar {
     flex-shrink: 0;
 }
 
-.hologram-file-info {
+.peek-file-info {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.hologram-icon {
+.peek-icon {
     font-size: 28px;
     width: 40px;
     height: 40px;
@@ -1052,7 +1052,7 @@ textarea::-webkit-scrollbar {
     border: 1px solid rgba(34, 211, 238, 0.2);
 }
 
-.hologram-filename {
+.peek-filename {
     font-family: 'JetBrains Mono', 'Inter', monospace;
     font-size: 14px;
     font-weight: 600;
@@ -1060,13 +1060,13 @@ textarea::-webkit-scrollbar {
     text-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
 }
 
-.hologram-meta {
+.peek-meta {
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 2px;
 }
 
-.hologram-close {
+.peek-close {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--text-muted);
@@ -1081,12 +1081,12 @@ textarea::-webkit-scrollbar {
     transition: all 0.2s;
 }
 
-.hologram-close:active {
+.peek-close:active {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
 }
 
-.hologram-body {
+.peek-body {
     flex: 1;
     overflow-y: auto;
     padding: 0;
@@ -1094,7 +1094,7 @@ textarea::-webkit-scrollbar {
     scrollbar-width: thin;
 }
 
-.hologram-code {
+.peek-code {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 12px;
     line-height: 1.6;
@@ -1125,7 +1125,7 @@ textarea::-webkit-scrollbar {
 }
 
 /* ============================================
-   VOICE COMMAND — Neural Bridge
+   VOICE COMMAND — Remote Relay
    ============================================ */
 .voice-btn {
     background: transparent;

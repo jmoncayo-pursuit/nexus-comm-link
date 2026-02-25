@@ -68,7 +68,7 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
     router.get('/app-state', cdpWrapper((cdp) => NexusService.getAppState(cdp)));
     router.post('/remote-click', cdpWrapper((cdp, body) => NexusService.clickElement(cdp, body)));
 
-    // File Peek - Hologram Protocol
+    // File Peek Utility
     router.get('/file-peek', (req, res) => {
         const filePath = req.query.path;
         if (!filePath) return res.status(400).json({ error: 'No path' });
@@ -109,7 +109,7 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
             const projectRoot = join(__dirname, '../../..');
             const proc = spawn('./dev.sh', [], { cwd: projectRoot, detached: true, stdio: 'ignore' });
             proc.unref();
-            res.json({ success: true, message: "War Room Server Booting..." });
+            res.json({ success: true, message: "Nexus Server Booting..." });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }

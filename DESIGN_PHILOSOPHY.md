@@ -1,15 +1,15 @@
-# DESIGN PHILOSOPHY - Nexus Mobile Connect
+# DESIGN PHILOSOPHY - Nexus Comm-Link
 
 ## Problem Statement
 Developing with powerful AI models in modern IDEs often involves long "thinking" times or prolonged generation of large codebases. Developers are often "tethered" to their desks, waiting for a prompt to finish before they can review or provide the next instruction.
 
-## The Solution: A Neural Tactical Relay
-Nexus Mobile Connect isn't a replacement for the desktop IDE; it's a **wireless tactical viewport**. It solves the "tethering" problem by mirroring the state of the desktop session to any device, effectively extending the *Nexus Command Lab* into the palm of your hand.
+## The Solution: A Wireless Viewport
+Nexus Comm-Link isn't a replacement for the desktop IDE; it's a **wireless viewport**. It solves the "tethering" problem by mirroring the state of the desktop session to any device, ensuring full situational awareness from the palm of your hand.
 
-## The Backstory: Evolution from "Keep It Moving"
-Nexus Mobile Connect is the spiritual and technical successor to **"Keep It Moving"**, a VS Code extension originally submitted to a [Dev.to Hackathon](https://dev.to/jmoncayopursuit/building-keep-it-moving-my-first-vs-code-extension-k65). While the original extension proved the concept, it was hampered by the restrictive DOM and sandbox limitations of traditional IDE extensions. 
+## The Backstory
+Nexus Comm-Link is the spiritual and technical successor to **"Keep It Moving"**, a VS Code extension originally submitted to a [Dev.to Hackathon](https://dev.to/jmoncayopursuit/building-keep-it-moving-my-first-vs-code-extension-k65).
 
-By leveraging the deep accessibility and raw power of the **Nexus development environment**, this iteration is "miles ahead"—moving beyond a simple extension to become a robust, full-stack **Mobile Connect** server that hooks directly into the heart of the development session without the previous platform constraints.
+By leveraging the direct accessibility of the **Nexus development environment**, this iteration provides a robust, full-stack **Mobile Connect** server that hooks directly into the heart of the development session without previous platform constraints.
 
 ## Design Principles
 

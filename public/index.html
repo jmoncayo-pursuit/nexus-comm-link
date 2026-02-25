@@ -8,13 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 
 <body>
-    <!-- Tactical Notification Layer -->
     <div id="nexusToast" class="nexus-toast"></div>
     <!-- Header -->
     <header class="header">
@@ -67,7 +66,7 @@
                 <line x1="12" y1="2" x2="12" y2="12"></line>
             </svg>
             <span id="bootServerText"
-                style="font-family: 'Orbitron', 'Inter', sans-serif; font-weight: 700; font-size: 11px; text-transform: uppercase;">Boot
+                style="font-family: 'Outfit', 'Inter', sans-serif; font-weight: 700; font-size: 11px; text-transform: uppercase;">Boot
                 Server</span>
         </div>
     </div>
@@ -85,7 +84,7 @@
             <div class="loading-state">
                 <div class="loading-spinner"></div>
                 <p
-                    style="font-family: 'Orbitron', 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-size: 12px; color: var(--accent);">
+                    style="font-family: 'Outfit', 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-size: 12px; color: var(--accent);">
                     Connecting...</p>
             </div>
         </div>
@@ -170,21 +169,21 @@
         </div>
     </div>
 
-    <!-- File Hologram Modal -->
-    <div class="hologram-overlay" id="hologramOverlay">
-        <div class="hologram-panel">
-            <div class="hologram-header">
-                <div class="hologram-file-info">
-                    <div class="hologram-icon" id="hologramIcon">📄</div>
+    <!-- File Peek Modal -->
+    <div class="peek-overlay" id="peekOverlay">
+        <div class="peek-panel">
+            <div class="peek-header">
+                <div class="peek-file-info">
+                    <div class="peek-icon" id="peekIcon">📄</div>
                     <div>
-                        <div class="hologram-filename" id="hologramFilename">file.py</div>
-                        <div class="hologram-meta" id="hologramMeta">0 lines · 0 bytes</div>
+                        <div class="peek-filename" id="peekFilename">file.py</div>
+                        <div class="peek-meta" id="peekMeta">0 lines · 0 bytes</div>
                     </div>
                 </div>
-                <button class="hologram-close" onclick="closeHologram()" aria-label="Close">✕</button>
+                <button class="peek-close" onclick="closePeek()" aria-label="Close">✕</button>
             </div>
-            <div class="hologram-body">
-                <pre class="hologram-code" id="hologramCode"></pre>
+            <div class="peek-body">
+                <pre class="peek-code" id="peekCode"></pre>
             </div>
         </div>
     </div>

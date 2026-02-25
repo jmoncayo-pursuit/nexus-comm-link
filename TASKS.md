@@ -1,29 +1,27 @@
-# Nexus Comm-Link: Development Roadmap 🚀
+# Nexus Comm-Link: Development Roadmap
 
-This document tracks the evolution of the Nexus Comm-Link from a "lab experiment" to a permanent fixture of our development process.
+This document tracks the evolution of the Nexus Comm-Link from a prototype to a stable production tool for mobile interaction.
 
-## 🎯 Immediate Intentions (Next Session)
+## 🎯 Upcoming Features
 
-### 🧩 Mobile UI Refinement
-- [ ] **Reading Thoughts**: Implement a specialized, high-readability expansion mode for "Thought" blocks to make deep-thinking sessions easier to follow on mobile.
-- [ ] **Accept Files Button**: Implement a remote click-relay for the "Accept" or "Apply" buttons in file blocks, allowing for one-tap deployment of AI-written code.
+### 🧩 UI Improvements
+- [ ] **Enhanced Readability**: Implement specialized expansion modes for text blocks to improve focus on mobile viewports.
+- [ ] **Remote Action Relay**: Add support for remote interaction with "Apply" and "Accept" buttons within file blocks.
 
-### 🧠 Model & Context Intelligence
-- [ ] **Model Context Management**: UI indicators to show what files/blocks are currently active in the model's context.
-- [ ] **Refresh Limit Awareness**: Visual tracking of model rate limits and token refresh cycles to avoid "Link Refused" scenarios.
+### ⚙️ Backend & Performance
+- [ ] **Context Visibility**: Add indicators to show active files and context windows within the mobile interface.
+- [ ] **Rate Limit Tracking**: Implement visual monitoring for model rate limits and token usage.
 
-### 🕹️ Advanced Remote Navigation
-- [ ] **Scroll by Prompt**: Automatic navigation markers. Tap to snap the view to specific prompt headers or major system events.
-
-### ⚙️ Nexus Core Configuration
-- [ ] **Global Settings Page**: A dedicated interface to manage server ports, auth tokens, refresh intervals, and UI themes without restarting the server.
+### 🕹️ Navigation & UX
+- [ ] **Marker Navigation**: Add the ability to quickly jump to specific messages or system milestones via a navigation menu.
+- [ ] **Configuration Portal**: Create a web interface for managing server settings, authentication tokens, and theme preferences.
 
 ---
 
 ## ✅ Completed Milestones
-- [x] **Project Rebranding**: Success transition to "Nexus Comm-Link".
-- [x] **Elite DX Refactoring**: Full architectural decomposition of `server.js` monolith (2300 lines) into Service/Route pattern (SRP compliant).
-- [x] **Context Relay**: Implementation of the status header for logs and command results.
-- [x] **Clean Snapshot Logic**: Removal of desktop artifacts and unnecessary UI elements.
-- [x] **Notification Layer**: Toast notifications for system status and connectivity feedback.
-- [x] **Cache-Busting (v2.1)**: Enforced update protocol for mobile browsers.
+- [x] **Core Rebranding**: Transitioned project identity to Nexus Comm-Link.
+- [x] **Service Decomposition**: Refactored the server monolith into a modular Service/Route pattern for better maintainability.
+- [x] **Snapshot Optimization**: Implemented efficient DOM filtering to remove desktop-only artifacts and improve mobile rendering.
+- [x] **System Notifications**: Integrated a toast-based notification system for real-time status updates.
+- [x] **Encrypted Tunneling**: Support for HTTPS and secure remote access via ngrok.
+- [x] **Unified State Sync**: Bidirectional synchronization of Model and Mode status between desktop and mobile.
