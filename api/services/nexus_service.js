@@ -193,7 +193,23 @@ export async function captureSnapshot(cdp) {
                 el.style.wordBreak = 'break-all !important';
             });
         } catch (globalErr) { }
-        
+
+        // === REMOTE ACTION RELAY: Mark actionable buttons for mobile ===
+        try {
+            clone.querySelectorAll('button, [role="button"], div[class*="btn"], span[class*="btn"]').forEach((btn, idx) => {
+                const txt = (btn.textContent || '').trim();
+                // Match Apply, Accept, Reject and their variants
+                if (/^(Apply|Accept|Reject|Accept All|Reject All|Apply All|Apply Changes|Accept Changes|Reject Changes|Run|Approve)$/i.test(txt) ||
+                    (txt.length < 40 && /\b(Apply|Accept|Reject)\b/i.test(txt) && !txt.includes('cookie') && !txt.includes('privacy'))) {
+                    btn.setAttribute('data-nexus-action', txt);
+                    btn.setAttribute('data-nexus-action-idx', String(idx));
+                    // Preserve original classes but add our marker
+                    const existingClass = btn.getAttribute('class') || '';
+                    btn.setAttribute('class', existingClass + ' nexus-action-relay');
+                }
+            });
+        } catch (actionErr) { }
+
         const html = clone.outerHTML;
         const rules = [];
         for (const sheet of document.styleSheets) {
@@ -219,13 +235,16 @@ export async function captureSnapshot(cdp) {
     })()`;
 
     let firstError = null;
-    for (const ctx of cdp.contexts) {
+    const contexts = cdp.contexts || [{ id: undefined }];
+    for (const ctx of contexts) {
         try {
-            const result = await cdp.call("Runtime.evaluate", {
+            const evalParams = {
                 expression: CAPTURE_SCRIPT,
-                returnByValue: true,
-                contextId: ctx.id
-            });
+                returnByValue: true
+            };
+            if (ctx.id !== undefined) evalParams.contextId = ctx.id;
+
+            const result = await cdp.call("Runtime.evaluate", evalParams);
             if (result.exceptionDetails) continue;
             if (result.result && result.result.value) {
                 const val = result.result.value;
@@ -363,6 +382,75 @@ export async function clickElement(cdp, { selector, index, textContent }) {
         } catch (e) { }
     }
     return { error: 'Click failed' };
+}
+
+// === REMOTE ACTION RELAY ===
+// Robust button finder for Apply/Accept/Reject actions
+export async function clickActionButton(cdp, actionText) {
+    const safeText = JSON.stringify(actionText);
+    const EXP = `(() => {
+        try {
+            const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'))
+                .filter(b => b.offsetParent !== null && b.offsetHeight > 0);
+
+            // Priority 1: Exact text match
+            let target = allBtns.find(b => b.textContent.trim() === ${safeText});
+
+            // Priority 2: Starts-with match (handles "Apply to file.js" patterns)
+            if (!target) {
+                target = allBtns.find(b => {
+                    const t = b.textContent.trim();
+                    return t.toLowerCase().startsWith(${safeText}.toLowerCase()) && t.length < 60;
+                });
+            }
+
+            // Priority 3: Contains match (fuzzy)
+            if (!target) {
+                target = allBtns.find(b => {
+                    const t = b.textContent.trim().toLowerCase();
+                    return t.includes(${safeText}.toLowerCase()) && t.length < 60;
+                });
+            }
+
+            // Priority 4: Aria-label match
+            if (!target) {
+                target = allBtns.find(b => {
+                    const label = (b.getAttribute('aria-label') || '').toLowerCase();
+                    return label.includes(${safeText}.toLowerCase());
+                });
+            }
+
+            if (target) {
+                target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                target.click();
+                return {
+                    success: true,
+                    clicked: target.textContent.trim().substring(0, 50),
+                    method: 'text_match'
+                };
+            }
+
+            // Not found — return diagnostic info
+            const visible = allBtns.slice(0, 20).map(b => b.textContent.trim().substring(0, 40));
+            return {
+                error: 'Action button not found',
+                searched: ${safeText},
+                visibleButtons: visible
+            };
+        } catch(e) { return { error: e.toString() }; }
+    })()`;
+
+    for (const ctx of cdp.contexts) {
+        try {
+            const res = await cdp.call("Runtime.evaluate", {
+                expression: EXP,
+                returnByValue: true,
+                contextId: ctx.id
+            });
+            if (res.result?.value) return res.result.value;
+        } catch (e) { }
+    }
+    return { error: 'No CDP context available' };
 }
 
 export async function remoteScroll(cdp, { scrollTop, scrollPercent }) {

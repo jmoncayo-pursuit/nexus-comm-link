@@ -68,6 +68,9 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
     router.get('/app-state', cdpWrapper((cdp) => NexusService.getAppState(cdp)));
     router.post('/remote-click', cdpWrapper((cdp, body) => NexusService.clickElement(cdp, body)));
 
+    // Remote Action Relay (Apply/Accept/Reject buttons)
+    router.post('/relay-action', cdpWrapper((cdp, body) => NexusService.clickActionButton(cdp, body.action)));
+
     // File Peek Utility
     router.get('/file-peek', (req, res) => {
         const filePath = req.query.path;

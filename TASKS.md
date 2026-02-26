@@ -6,7 +6,6 @@ This document tracks the evolution of the Nexus Comm-Link from a prototype to a 
 
 ### 🧩 UI Improvements
 - [ ] **Enhanced Readability**: Implement specialized expansion modes for text blocks to improve focus on mobile viewports.
-- [ ] **Remote Action Relay**: Add support for remote interaction with "Apply" and "Accept" buttons within file blocks.
 
 ### ⚙️ Backend & Performance
 - [ ] **Context Visibility**: Add indicators to show active files and context windows within the mobile interface.
@@ -19,6 +18,7 @@ This document tracks the evolution of the Nexus Comm-Link from a prototype to a 
 ---
 
 ## ✅ Completed Milestones
+- [x] **Remote Action Relay**: Tap "Apply", "Accept", and "Reject" buttons from phone via dedicated `/relay-action` endpoint with robust CDP button matching and mobile-optimized UI overlays.
 - [x] **Core Rebranding**: Transitioned project identity to Nexus Comm-Link.
 - [x] **Service Decomposition**: Refactored the server monolith into a modular Service/Route pattern for better maintainability.
 - [x] **Snapshot Optimization**: Implemented efficient DOM filtering to remove desktop-only artifacts and improve mobile rendering.
