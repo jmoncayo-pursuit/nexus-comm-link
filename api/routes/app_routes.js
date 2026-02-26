@@ -123,6 +123,18 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
         }
     });
 
+    // Stop Server
+    router.post('/stop-server', (req, res) => {
+        try {
+            const projectRoot = join(__dirname, '../../..');
+            const proc = spawn('./stop_server.sh', [], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+            proc.unref();
+            res.json({ success: true, message: "Nexus Server Stopping..." });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     router.post('/remote-scroll', async (req, res) => {
         const cdp = bridgeService.getConnection();
         if (!cdp) return res.status(503).json({ error: 'CDP disconnected' });
