@@ -1503,7 +1503,29 @@ bootServerBtn.addEventListener('click', async () => {
     }
 });
 
+let undoArmed = false;
+let undoArmTimeout = null;
+
 undoBtn.addEventListener('click', async () => {
+    if (!undoArmed) {
+        // First click: Arm the button
+        undoArmed = true;
+        undoBtn.classList.add('armed');
+        showToast('TAP AGAIN TO CONFIRM UNDO', 'info');
+
+        // Reset arming after 3 seconds
+        undoArmTimeout = setTimeout(() => {
+            undoArmed = false;
+            undoBtn.classList.remove('armed');
+        }, 3000);
+        return;
+    }
+
+    // Second click: Execute Undo
+    clearTimeout(undoArmTimeout);
+    undoArmed = false;
+    undoBtn.classList.remove('armed');
+
     try {
         undoBtn.disabled = true;
         showToast('EXECUTING UNDO...', 'info');
@@ -1511,6 +1533,8 @@ undoBtn.addEventListener('click', async () => {
         const data = await res.json();
         if (data.success) {
             showToast('UNDO SUCCESSFUL', 'success');
+            // Refresh because undo changes the state significantly
+            setTimeout(() => loadSnapshot(true), 1200);
         } else {
             showToast('UNDO FAILED', 'error');
         }
