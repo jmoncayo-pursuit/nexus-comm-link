@@ -492,30 +492,62 @@ export async function getChatHistory(cdp) {
         try {
             const btn = document.querySelector('[data-tooltip-id*="history"]') || Array.from(document.querySelectorAll('button')).find(b => b.querySelector('svg.lucide-clock'));
             if (!btn) return { error: 'History button not found' };
-            btn.click(); await new Promise(r => setTimeout(r, 2000));
+            
+            // Re-open if closed or ensure it is open
+            if (btn.getAttribute('aria-expanded') !== 'true') {
+                btn.click(); await new Promise(r => setTimeout(r, 1000));
+            }
+
             const search = Array.from(document.querySelectorAll('input')).find(i => i.placeholder?.toLowerCase().includes('conversation'));
             let panel = search?.parentElement;
             for(let i=0; i<10 && panel; i++) { if(panel.offsetHeight > 100) break; panel = panel.parentElement; }
-            if (!panel) return { error: 'Panel not found', chats: [] };
+            if (!panel) return { error: 'Panel not found', blocks: [] };
             
-            const timeHeaders = /^(today|yesterday|previous|last|(\\d+\\s*(min|hr|day|wk|mo)s?\\s*ago))$/i;
-            const chats = []; const seen = new Set();
-            for (const span of panel.querySelectorAll('span')) {
-                const text = span.textContent.trim();
-                // Filter out: short text, duplicates, grouping headers like "Recent In", 
-                // and temporal separators like "Today", "3 mins ago"
-                if (text.length < 3 || seen.has(text) || text.toLowerCase().includes('recent in')) continue;
-                if (timeHeaders.test(text)) continue;
+            const timeHeaders = /^(today|yesterday|previous|last|(\\d+\\s*(min|hr|day|wk|mo)s?\\s*ago)|current|other conversations|recent in .*)$/i;
+            const blocks = []; const seen = new Set();
+            
+            // Capture all relevant title/header text elements in the panel in visual order
+            const elements = Array.from(panel.querySelectorAll('span, div[class*="title"], div[class*="label"]'));
+            
+            for (const el of elements) {
+                const text = el.textContent.trim();
+                if (text.length < 2 || seen.has(text)) continue;
                 
-                seen.add(text); chats.push({ title: text, date: 'Recent' });
-                if (chats.length >= 50) break;
+                // Identify headers (labels for groups)
+                if (timeHeaders.test(text)) {
+                    blocks.push({ type: 'header', title: text });
+                    seen.add(text);
+                    continue;
+                }
+
+                // Identify Chat Items
+                const container = el.closest('div[role="button"]') || el.closest('div[class*="item"]');
+                if (container && !text.includes('Show ') && !text.includes('more')) {
+                    const isActive = container.className?.includes('selected') || 
+                                     container.className?.includes('active') || 
+                                     container.getAttribute('aria-selected') === 'true' ||
+                                     container.style.background?.includes('rgb(2'); 
+
+                    blocks.push({ 
+                        type: 'chat', 
+                        title: text, 
+                        active: !!isActive,
+                        project: container.querySelector('[class*="description"], [class*="desc"]')?.textContent.trim() || ''
+                    });
+                    seen.add(text);
+                } else if (text.includes('Show ') && text.includes('more')) {
+                    blocks.push({ type: 'action', title: text });
+                    seen.add(text);
+                }
+                
+                if (blocks.length >= 60) break;
             }
-            return { success: true, chats };
-        } catch(e) { return { error: e.toString(), chats: [] }; }
+            return { success: true, blocks };
+        } catch(e) { return { error: e.toString(), blocks: [] }; }
     })()`;
 
     const res = await cdpEval(cdp, EXP, { awaitPromise: true });
-    return res || { error: 'Context failed', chats: [] };
+    return res || { error: 'Context failed', blocks: [] };
 }
 
 export async function selectChat(cdp, chatTitle) {

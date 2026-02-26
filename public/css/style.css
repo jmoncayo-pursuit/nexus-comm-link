@@ -929,8 +929,9 @@ textarea::-webkit-scrollbar {
 .history-layer {
     position: fixed;
     inset: 0;
-    background: var(--bg-app);
-    z-index: 100;
+    background: #0f172a;
+    /* Deeper slate for history */
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
@@ -945,56 +946,132 @@ textarea::-webkit-scrollbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
-    background: rgba(30, 41, 59, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .history-header h2 {
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
-.icon-btn {
-    background: transparent;
-    border: none;
+/* History Search */
+.history-search-container {
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.history-search {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
     color: var(--text-main);
-    cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.history-search:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .history-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0;
+    padding: 8px 0;
 }
 
-/* Enhancements for History Items to look more "native" */
+.history-section-header {
+    padding: 16px 16px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: capitalize;
+}
+
 .history-item {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-app);
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: none;
+    gap: 12px;
 }
 
-.history-item:active {
-    background: var(--bg-input);
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.history-item.active {
+    background: #02457a !important;
+    /* Antigravity blue highlight */
+}
+
+.history-item-icon {
+    font-size: 16px;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.history-item-content {
+    flex: 1;
+    min-width: 0;
 }
 
 .history-item-title {
-    font-size: 15px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.history-item-project {
+    opacity: 0.6;
 }
 
 .history-item-date {
+    margin-left: auto;
     font-size: 11px;
     color: var(--text-muted);
-    margin-top: 4px;
+    flex-shrink: 0;
+}
+
+.active .history-item-date,
+.active .history-item-meta {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.history-show-more {
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.history-show-more:hover {
+    color: var(--accent);
 }
 
 /* ============================================
@@ -1398,11 +1475,27 @@ textarea::-webkit-scrollbar {
 }
 
 @keyframes action-error-shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-4px); }
-    40% { transform: translateX(4px); }
-    60% { transform: translateX(-3px); }
-    80% { transform: translateX(3px); }
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-4px);
+    }
+
+    40% {
+        transform: translateX(4px);
+    }
+
+    60% {
+        transform: translateX(-3px);
+    }
+
+    80% {
+        transform: translateX(3px);
+    }
 }
 
 /* Action button icon */
@@ -1425,6 +1518,7 @@ textarea::-webkit-scrollbar {
     color: var(--success);
     box-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
 }
+
 /* Undo Button */
 .undo-btn {
     background: transparent;
