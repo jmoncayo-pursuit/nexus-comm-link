@@ -1,3 +1,19 @@
+// Helper: Evaluate expression across CDP contexts with proper fallback
+async function cdpEval(cdp, expression, opts = {}) {
+    const contexts = cdp.contexts || [{ id: undefined }];
+    for (const ctx of contexts) {
+        try {
+            const params = { expression, returnByValue: true, ...opts };
+            if (ctx.id !== undefined) params.contextId = ctx.id;
+            else delete params.contextId; // Ensure undefined doesn't leak
+            const res = await cdp.call("Runtime.evaluate", params);
+            if (res.result?.value) return res.result.value;
+            if (res.exceptionDetails) continue;
+        } catch (e) { }
+    }
+    return null;
+}
+
 export async function captureSnapshot(cdp) {
     const CAPTURE_SCRIPT = `(() => {
         const q = (s) => document.querySelector(s);
@@ -295,13 +311,8 @@ export async function injectMessage(cdp, text) {
         return { ok:true, method:"enter_keypress" };
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const result = await cdp.call("Runtime.evaluate", { expression: EXPRESSION, returnByValue: true, awaitPromise: true, contextId: ctx.id });
-            if (result.result?.value) return result.result.value;
-        } catch (e) { }
-    }
-    return { ok: false, reason: "no_context" };
+    const result = await cdpEval(cdp, EXPRESSION, { awaitPromise: true });
+    return result || { ok: false, reason: "no_context" };
 }
 
 export async function setMode(cdp, mode) {
@@ -334,12 +345,8 @@ export async function setMode(cdp, mode) {
         } catch(err) { return { error: err.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, awaitPromise: true, contextId: ctx.id });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
+    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
+    return res || { error: 'Context failed' };
     return { error: 'Context failed' };
 }
 
@@ -352,13 +359,8 @@ export async function stopGeneration(cdp) {
         return { error: 'No active generation' };
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, contextId: ctx.id });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'Context failed' };
+    const res = await cdpEval(cdp, EXP);
+    return res || { error: 'Context failed' };
 }
 
 export async function clickElement(cdp, { selector, index, textContent }) {
@@ -375,13 +377,8 @@ export async function clickElement(cdp, { selector, index, textContent }) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, contextId: ctx.id });
-            if (res.result?.value?.success) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'Click failed' };
+    const res = await cdpEval(cdp, EXP);
+    return res?.success ? res : { error: 'Click failed' };
 }
 
 // === REMOTE ACTION RELAY ===
@@ -440,17 +437,8 @@ export async function clickActionButton(cdp, actionText) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", {
-                expression: EXP,
-                returnByValue: true,
-                contextId: ctx.id
-            });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'No CDP context available' };
+    const res = await cdpEval(cdp, EXP);
+    return res || { error: 'No CDP context available' };
 }
 
 export async function remoteScroll(cdp, { scrollTop, scrollPercent }) {
@@ -465,13 +453,8 @@ export async function remoteScroll(cdp, { scrollTop, scrollPercent }) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, contextId: ctx.id });
-            if (res.result?.value?.success) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'Scroll failed' };
+    const res = await cdpEval(cdp, EXP);
+    return res?.success ? res : { error: 'Scroll failed' };
 }
 
 export async function setModel(cdp, modelName) {
@@ -488,12 +471,8 @@ export async function setModel(cdp, modelName) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, awaitPromise: true, contextId: ctx.id });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
+    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
+    return res || { error: 'Context failed' };
     return { error: 'Context failed' };
 }
 
@@ -504,13 +483,8 @@ export async function startNewChat(cdp) {
         return { error: 'New chat button not found' };
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, contextId: ctx.id });
-            if (res.result?.value?.success) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'Context failed' };
+    const res = await cdpEval(cdp, EXP);
+    return res?.success ? res : { error: 'Context failed' };
 }
 
 export async function getChatHistory(cdp) {
@@ -534,13 +508,8 @@ export async function getChatHistory(cdp) {
         } catch(e) { return { error: e.toString(), chats: [] }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, awaitPromise: true, contextId: ctx.id });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
-    return { error: 'Context failed', chats: [] };
+    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
+    return res || { error: 'Context failed', chats: [] };
 }
 
 export async function selectChat(cdp, chatTitle) {
@@ -555,12 +524,8 @@ export async function selectChat(cdp, chatTitle) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
-        try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, awaitPromise: true, contextId: ctx.id });
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
+    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
+    return res || { error: 'Context failed' };
     return { error: 'Context failed' };
 }
 
@@ -572,16 +537,23 @@ export async function getAppState(cdp) {
             if (modeEl) mode = modeEl.innerText;
             
             let model = 'Unknown';
-            const modelEl = Array.from(document.querySelectorAll('*')).find(el => (el.innerText.includes('Gemini') || el.innerText.includes('Claude')) && el.children.length === 0);
-            if (modelEl) model = modelEl.innerText;
+            const modelKeywords = ['Gemini', 'Claude', 'GPT', 'Sonnet', 'Haiku', 'Opus', 'o1', 'o3', 'gpt-4', 'gpt-3', 'Llama', 'Mistral', 'DeepSeek', 'Qwen'];
+            const modelEl = Array.from(document.querySelectorAll('*')).find(el => {
+                const txt = (el.innerText || '').trim();
+                return el.children.length === 0 && txt.length < 60 && modelKeywords.some(k => txt.includes(k));
+            });
+            if (modelEl) model = modelEl.innerText.trim();
             
             return { mode, model };
         } catch(e) { return { mode: 'Unknown', model: 'Unknown' }; }
     })()`;
 
-    for (const ctx of cdp.contexts) {
+    const contexts = cdp.contexts || [{ id: undefined }];
+    for (const ctx of contexts) {
         try {
-            const res = await cdp.call("Runtime.evaluate", { expression: EXP, returnByValue: true, contextId: ctx.id });
+            const evalParams = { expression: EXP, returnByValue: true };
+            if (ctx.id !== undefined) evalParams.contextId = ctx.id;
+            const res = await cdp.call("Runtime.evaluate", evalParams);
             if (res.result?.value) return res.result.value;
         } catch (e) { }
     }
