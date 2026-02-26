@@ -29,6 +29,7 @@ const attachmentIndicator = document.getElementById('attachmentIndicator');
 
 // --- State ---
 let isFirstLoad = true;
+let lastApiStatus = false;
 let autoRefreshEnabled = true;
 let userIsScrolling = false;
 let userScrollLockUntil = 0; // Timestamp until which we respect user scroll
@@ -1387,6 +1388,8 @@ function updateBootServerStatus(cdpConnected, apiConnected) {
     const ideStatusSpan = document.getElementById('ideStatus');
     if (!textSpan || !bootBtn) return;
 
+    lastApiStatus = apiConnected;
+
     // 1. Update the Main "SERVER ON" Button (Port 8000)
     if (apiConnected) {
         textSpan.innerText = 'SERVER ON';
@@ -1421,14 +1424,27 @@ function updateBootServerStatus(cdpConnected, apiConnected) {
 bootServerBtn.addEventListener('click', async () => {
     try {
         const textSpan = document.getElementById('bootServerText');
-        if (textSpan) textSpan.innerText = 'BOOTING...';
 
-        const res = await fetchWithAuth('/boot-server', { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-            setTimeout(() => { if (textSpan) textSpan.innerText = 'BOOTED'; }, 1000);
+        if (lastApiStatus) {
+            // Server is ON, we want to STOP it
+            if (textSpan) textSpan.innerText = 'STOPPING...';
+            const res = await fetchWithAuth('/stop-server', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                setTimeout(() => { if (textSpan) textSpan.innerText = 'STOPPED'; }, 1000);
+            } else {
+                if (textSpan) textSpan.innerText = 'ERROR';
+            }
         } else {
-            if (textSpan) textSpan.innerText = 'ERROR';
+            // Server is OFF, we want to START it
+            if (textSpan) textSpan.innerText = 'BOOTING...';
+            const res = await fetchWithAuth('/boot-server', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                setTimeout(() => { if (textSpan) textSpan.innerText = 'BOOTED'; }, 1000);
+            } else {
+                if (textSpan) textSpan.innerText = 'ERROR';
+            }
         }
     } catch (e) {
         console.error(e);
