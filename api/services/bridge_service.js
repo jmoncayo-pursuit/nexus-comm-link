@@ -1,5 +1,5 @@
 import { captureSnapshot } from './nexus_service.js';
-import { hashString } from './utils.js';
+import { hashString, isPortOpen } from './utils.js';
 import { discoverCDP, connectCDP } from './cdp_service.js';
 import { WebSocket } from 'ws';
 
@@ -12,6 +12,8 @@ export class BridgeService {
         this.isConnecting = false;
         this.pollInterval = 2500;
         this.lastErrorLog = 0;
+        this.lastApiState = false;
+        this.lastCdpState = false;
     }
 
     async initCDP() {
@@ -30,6 +32,23 @@ export class BridgeService {
 
     startPolling() {
         const poll = async () => {
+            // 1. Monitor Base Status (API + CDP)
+            try {
+                const apiAlive = await isPortOpen(8000);
+                const cdpAlive = !!this.cdpConnection;
+
+                if (apiAlive !== this.lastApiState || cdpAlive !== this.lastCdpState) {
+                    this.lastApiState = apiAlive;
+                    this.lastCdpState = cdpAlive;
+                    this.broadcast({
+                        type: 'status_update',
+                        apiConnected: apiAlive,
+                        cdpConnected: cdpAlive
+                    });
+                }
+            } catch (e) { }
+
+            // 2. Handle Reconnection
             if (!this.cdpConnection) {
                 if (!this.isConnecting) {
                     console.log('🔍 Looking for Nexus CDP connection...');
@@ -43,6 +62,7 @@ export class BridgeService {
                 return;
             }
 
+            // 3. Capture Snapshot
             try {
                 const snapshot = await captureSnapshot(this.cdpConnection);
                 if (snapshot && !snapshot.error) {

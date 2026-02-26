@@ -158,6 +158,9 @@ function connectWebSocket() {
         if (data.type === 'snapshot_update' && autoRefreshEnabled) {
             loadSnapshot();
         }
+        if (data.type === 'status_update') {
+            updateBootServerStatus(data.cdpConnected, data.apiConnected);
+        }
     };
 
     ws.onclose = () => {
