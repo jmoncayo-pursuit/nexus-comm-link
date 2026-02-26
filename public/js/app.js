@@ -186,17 +186,34 @@ async function loadSnapshot(force = false) {
         const response = await fetchWithAuth('/snapshot');
         if (!response.ok) {
             if (response.status === 503) {
-                // No snapshot available - likely no chat open
+                // No snapshot available - likely no chat open or CDP not connected
                 chatIsOpen = false;
-                // ONLY show empty state if we don't have existing content
-                // This prevents "flicker/wipe" when data temporarily drops
-                if (chatContent.innerHTML.trim() === '') {
-                    showEmptyState();
+                // Show empty state if we still have the initial spinner or no real content
+                const hasRealContent = chatContent.innerHTML.trim() !== '' && !chatContent.querySelector('.loading-state') && !chatContent.querySelector('.empty-state');
+                if (!hasRealContent) {
+                    const data = await response.json().catch(() => ({}));
+                    if (!data.cdpConnected) {
+                        // CDP not connected — show a helpful waiting state
+                        chatContent.innerHTML = `
+                            <div class="empty-state">
+                                <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--warning);">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                                <h2>Waiting for IDE</h2>
+                                <p>Launch your editor with debug mode enabled:<br><code style="color:var(--accent); font-size:12px;">nexus . --remote-debugging-port=9000</code></p>
+                                <p style="font-size:11px; opacity:0.5;">Or double-click launch_nexus_debug.command</p>
+                            </div>
+                        `;
+                    } else {
+                        showEmptyState();
+                    }
+                    updateBootServerStatus(data.cdpConnected);
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    updateBootServerStatus(data.cdpConnected);
                 }
-
-                // Still check status even if snapshot 503s
-                const data = await response.json().catch(() => ({}));
-                updateBootServerStatus(data.cdpConnected);
 
                 return;
             }
@@ -543,6 +560,7 @@ async function loadSnapshot(force = false) {
         const deferWork = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
         deferWork(() => {
             addMobileCopyButtons();
+            injectActionButtons();
             linkifyFilePaths();
         });
 
@@ -638,6 +656,162 @@ function addMobileCopyButtons() {
 
         // Insert button into pre element
         pre.appendChild(copyBtn);
+    });
+}
+
+// === REMOTE ACTION RELAY: Inject tappable mobile action buttons ===
+function injectActionButtons() {
+    // Find action buttons marked by the server in the snapshot
+    const actionBtns = chatContent.querySelectorAll('[data-nexus-action]');
+
+    actionBtns.forEach(btn => {
+        // Skip if already processed
+        if (btn.querySelector('.nexus-action-overlay')) return;
+
+        const actionText = btn.getAttribute('data-nexus-action');
+        if (!actionText) return;
+
+        // Determine action type for styling
+        const lowerAction = actionText.toLowerCase();
+        let actionType = 'neutral';
+        let actionIcon = '⚡';
+        if (/accept|apply|approve/i.test(lowerAction)) {
+            actionType = 'accept';
+            actionIcon = '✓';
+        } else if (/reject/i.test(lowerAction)) {
+            actionType = 'reject';
+            actionIcon = '✕';
+        } else if (/run/i.test(lowerAction)) {
+            actionType = 'run';
+            actionIcon = '▶';
+        }
+
+        // Create the mobile-optimized overlay button
+        const overlay = document.createElement('button');
+        overlay.className = `nexus-action-overlay nexus-action-${actionType}`;
+        overlay.innerHTML = `<span class="nexus-action-icon">${actionIcon}</span><span class="nexus-action-label">${escapeHtml(actionText)}</span>`;
+        overlay.setAttribute('data-action-text', actionText);
+
+        // Tap handler — relay to desktop
+        overlay.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Immediate visual feedback
+            overlay.classList.add('nexus-action-pending');
+            overlay.innerHTML = `<span class="nexus-action-icon">⏳</span><span class="nexus-action-label">Relaying...</span>`;
+            showToast(`Relaying: ${actionText}`, 'processing');
+
+            try {
+                const res = await fetchWithAuth('/relay-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: actionText })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    overlay.classList.remove('nexus-action-pending');
+                    overlay.classList.add('nexus-action-success');
+                    overlay.innerHTML = `<span class="nexus-action-icon">✅</span><span class="nexus-action-label">Done</span>`;
+                    showToast(`Action Relayed: ${data.clicked || actionText}`, 'success');
+
+                    // Refresh snapshot to reflect the change
+                    setTimeout(() => loadSnapshot(true), 800);
+                    setTimeout(() => loadSnapshot(true), 2000);
+                } else {
+                    overlay.classList.remove('nexus-action-pending');
+                    overlay.classList.add('nexus-action-error');
+                    overlay.innerHTML = `<span class="nexus-action-icon">⚠️</span><span class="nexus-action-label">Failed</span>`;
+                    showToast(`Action Failed: ${data.error || 'Unknown'}`, 'error');
+
+                    // Reset after 3s
+                    setTimeout(() => {
+                        overlay.classList.remove('nexus-action-error');
+                        overlay.innerHTML = `<span class="nexus-action-icon">${actionIcon}</span><span class="nexus-action-label">${escapeHtml(actionText)}</span>`;
+                    }, 3000);
+                }
+            } catch (err) {
+                overlay.classList.remove('nexus-action-pending');
+                overlay.classList.add('nexus-action-error');
+                overlay.innerHTML = `<span class="nexus-action-icon">❌</span><span class="nexus-action-label">Network Error</span>`;
+                showToast('Relay Failed — Check Connection', 'error');
+
+                setTimeout(() => {
+                    overlay.classList.remove('nexus-action-error');
+                    overlay.innerHTML = `<span class="nexus-action-icon">${actionIcon}</span><span class="nexus-action-label">${escapeHtml(actionText)}</span>`;
+                }, 3000);
+            }
+        });
+
+        // Inject: replace the original button content with our styled overlay
+        btn.style.position = 'relative';
+        btn.style.overflow = 'visible';
+        btn.appendChild(overlay);
+    });
+
+    // Also scan for any un-marked buttons that look like actions
+    // (catches buttons the server might have missed)
+    chatContent.querySelectorAll('button, [role="button"]').forEach(btn => {
+        if (btn.querySelector('.nexus-action-overlay')) return;
+        if (btn.getAttribute('data-nexus-action')) return;
+        if (btn.classList.contains('mobile-copy-btn')) return;
+        if (btn.classList.contains('nexus-terminal-context-btn')) return;
+
+        const txt = (btn.textContent || '').trim();
+        if (/^(Apply|Accept|Reject|Accept All|Reject All|Apply All)$/i.test(txt)) {
+            // Mark it retroactively
+            btn.setAttribute('data-nexus-action', txt);
+            btn.classList.add('nexus-action-relay');
+
+            const lowerTxt = txt.toLowerCase();
+            let type = 'neutral';
+            let icon = '⚡';
+            if (/accept|apply/.test(lowerTxt)) { type = 'accept'; icon = '✓'; }
+            else if (/reject/.test(lowerTxt)) { type = 'reject'; icon = '✕'; }
+
+            const overlay = document.createElement('button');
+            overlay.className = `nexus-action-overlay nexus-action-${type}`;
+            overlay.innerHTML = `<span class="nexus-action-icon">${icon}</span><span class="nexus-action-label">${escapeHtml(txt)}</span>`;
+            overlay.setAttribute('data-action-text', txt);
+
+            overlay.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                overlay.classList.add('nexus-action-pending');
+                overlay.innerHTML = `<span class="nexus-action-icon">⏳</span><span class="nexus-action-label">Relaying...</span>`;
+                showToast(`Relaying: ${txt}`, 'processing');
+
+                try {
+                    const res = await fetchWithAuth('/relay-action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: txt })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        overlay.classList.remove('nexus-action-pending');
+                        overlay.classList.add('nexus-action-success');
+                        overlay.innerHTML = `<span class="nexus-action-icon">✅</span><span class="nexus-action-label">Done</span>`;
+                        showToast(`Action Relayed: ${data.clicked || txt}`, 'success');
+                        setTimeout(() => loadSnapshot(true), 800);
+                        setTimeout(() => loadSnapshot(true), 2000);
+                    } else {
+                        overlay.classList.remove('nexus-action-pending');
+                        showToast(`Failed: ${data.error}`, 'error');
+                        setTimeout(() => {
+                            overlay.innerHTML = `<span class="nexus-action-icon">${icon}</span><span class="nexus-action-label">${escapeHtml(txt)}</span>`;
+                        }, 3000);
+                    }
+                } catch (err) {
+                    overlay.classList.remove('nexus-action-pending');
+                    showToast('Relay Failed', 'error');
+                }
+            });
+
+            btn.style.position = 'relative';
+            btn.appendChild(overlay);
+        }
     });
 }
 
@@ -1302,14 +1476,17 @@ chatContainer.addEventListener('click', async (e) => {
     const target = e.target.closest('div, span, p, summary, button, details');
     if (!target) return;
 
+    // Skip if this was already handled by our injected action overlay
+    if (e.target.closest('.nexus-action-overlay')) return;
+
     const text = target.innerText || '';
 
     // Check if this looks like a thought toggle
     const isThoughtToggle = /Thought|Thinking/i.test(text) && text.length < 500;
 
-    // Check if this looks like an Accept/Reject action button
+    // Check if this looks like an Apply/Accept/Reject action button
     const isActionBtn = target.tagName === 'BUTTON' || target.getAttribute('role') === 'button';
-    const isReviewAction = isActionBtn && /Accept|Reject|Run|Stop|Cancel/i.test(text) && text.length < 30;
+    const isReviewAction = isActionBtn && /Apply|Accept|Reject|Run|Stop|Cancel/i.test(text) && text.length < 30;
 
     const shouldForwardClick = isThoughtToggle || isReviewAction;
 
@@ -1318,9 +1495,33 @@ chatContainer.addEventListener('click', async (e) => {
         target.style.opacity = '0.5';
         setTimeout(() => target.style.opacity = '1', 300);
 
-        // For thoughts, use first line ("Thought for 3s"). For buttons, use precise text.
         const firstLine = isReviewAction ? text.trim() : text.split('\n')[0].trim();
 
+        // Use dedicated action relay for Apply/Accept/Reject
+        if (isReviewAction && /Apply|Accept|Reject/i.test(firstLine)) {
+            showToast(`Relaying: ${firstLine}`, 'processing');
+            try {
+                const response = await fetchWithAuth('/relay-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: firstLine })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`✓ ${data.clicked || firstLine} — Relayed`, 'success');
+                } else {
+                    showToast(`⚠ ${data.error || 'Failed'}`, 'error');
+                }
+            } catch (err) {
+                showToast('Relay failed — check connection', 'error');
+                console.error('Action relay failed:', err);
+            }
+            setTimeout(() => loadSnapshot(true), 1200);
+            setTimeout(() => loadSnapshot(true), 2500);
+            return;
+        }
+
+        // Fallback: generic remote click for thoughts and other actions
         try {
             const response = await fetchWithAuth('/remote-click', {
                 method: 'POST',

@@ -57,6 +57,7 @@ graph TD
 | `injectMessage()` | Locates the Nexus input field and simulates typing/submission. Uses `JSON.stringify` for safe escaping. |
 | `setMode()` / `setModel()` | Robust text-based selectors to change AI settings remotely. |
 | `clickElement()` | Relays a physical click from the phone to a specific element index on Desktop. |
+| `clickActionButton()` | Robust action relay for Apply/Accept/Reject buttons. Uses 4-tier matching: exact text → starts-with → contains → aria-label. |
 | `remoteScroll()` | Syncs phone scroll position to Desktop Nexus chat. |
 | `getAppState()` | Syncs Mode/Model status and detects history visibility. |
 | `startNewChat()` | Triggers the "New Chat" action on Desktop. |
@@ -85,6 +86,7 @@ graph TD
 | `/select-chat` | POST | Switches the desktop session to a selected conversation. |
 | `/chat-status` | GET | Returns status of the chat container and editor. |
 | `/remote-click` | POST | Triggers a click event on Desktop (for Thought expansion). |
+| `/relay-action` | POST | Relays Apply/Accept/Reject button clicks from mobile to Desktop via robust text matching. |
 | `/remote-scroll` | POST | Syncs phone scroll position to Desktop Nexus. |
 | `/generate-ssl` | POST | Generates SSL certificates (for HTTPS setup via UI). |
 | `/debug-ui` | GET | Returns serialized UI tree for debugging. |

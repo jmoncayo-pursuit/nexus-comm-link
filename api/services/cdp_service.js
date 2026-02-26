@@ -61,8 +61,9 @@ export async function connectCDP(url) {
         const ws = new WebSocket(url);
         let id = 0;
         const pendingCalls = new Map();
+        ws.contexts = []; // Initialize contexts array
 
-        ws.on('open', () => {
+        ws.on('open', async () => {
             console.log('✅ Connected to Nexus CDP');
 
             // Expose a clean .call() method
@@ -80,6 +81,30 @@ export async function connectCDP(url) {
                     ws.send(payload);
                 });
             };
+
+            // Discover execution contexts
+            try {
+                await ws.call('Runtime.enable', {});
+                // Small delay for contexts to populate
+                await new Promise(r => setTimeout(r, 500));
+                
+                // Try to get the default context by evaluating a simple expression
+                try {
+                    const testResult = await ws.call('Runtime.evaluate', {
+                        expression: '({contextId: 1})',
+                        returnByValue: true
+                    });
+                    // If we get here, the default context works — create a minimal context entry
+                    ws.contexts = [{ id: undefined }]; // undefined contextId = default context
+                    console.log('✅ Using default execution context');
+                } catch (e) {
+                    console.warn('⚠️  Could not verify default context:', e.message);
+                    ws.contexts = [{ id: undefined }];
+                }
+            } catch (e) {
+                console.warn('⚠️  Runtime.enable failed:', e.message);
+                ws.contexts = [{ id: undefined }]; // Fallback to default
+            }
 
             resolve(ws);
         });
