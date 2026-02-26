@@ -1230,20 +1230,69 @@ async function showChatHistory() {
     const historyLayer = document.getElementById('historyLayer');
     const historyList = document.getElementById('historyList');
 
-    // Temporary: Feature is in development
+    // Show loading state
     historyList.innerHTML = `
         <div style="padding: 40px 20px; text-align: center; color: white;">
-            <div style="font-size: 24px; margin-bottom: 10px;">🚧</div>
-            <div style="font-weight: 500; margin-bottom: 5px;">History In Development</div>
-            <div style="font-size: 13px; opacity: 0.7;">We are working on improving the history sync. Check back soon!</div>
-            <br>
-            <div class="history-item new-chat-item" onclick="hideChatHistory(); startNewChat();" style="justify-content: center; background: var(--accent); color: white; border:none;">
-                Start New Conversation
+            <div class="loading-state">
+                <div class="loader-circle" style="width: 24px; height: 24px; margin: 0 auto 10px; border-top-color: var(--accent);"></div>
+                <div style="font-size: 13px; opacity: 0.7;">Syncing with IDE...</div>
             </div>
         </div>
     `;
     historyLayer.classList.add('show');
-    setTimeout(() => historyBtn.style.opacity = '1', 300);
+
+    try {
+        const res = await fetchWithAuth('/chat-history');
+        const data = await res.json();
+
+        if (data.success && data.chats && data.chats.length > 0) {
+            historyList.innerHTML = '';
+            data.chats.forEach(chat => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.onclick = () => {
+                    hideChatHistory();
+                    selectChat(chat.title);
+                };
+                item.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <div style="width:36px; height:36px; border-radius:50%; background:rgba(34, 211, 238, 0.1); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:18px;">💬</div>
+                        <div style="flex:1;">
+                            <div class="history-item-title" style="color:var(--text-main); font-weight:600; font-size:14px; margin-bottom:2px;">${escapeHtml(chat.title)}</div>
+                            <div class="history-item-date" style="color:var(--text-muted); font-size:11px;">${chat.date || 'Recent'}</div>
+                        </div>
+                    </div>
+                `;
+                historyList.appendChild(item);
+            });
+
+            // Add "New Chat" button at bottom
+            const newChat = document.createElement('div');
+            newChat.className = 'history-item';
+            newChat.style = "justify-content: center; background: rgba(34, 211, 238, 0.05); color: var(--accent); border: 1px dashed rgba(34, 211, 238, 0.3); margin: 16px; border-radius: 8px; text-align: center; padding: 12px;";
+            newChat.onclick = () => {
+                hideChatHistory();
+                startNewChat();
+            };
+            newChat.innerHTML = `<span style="font-weight:700; text-transform:uppercase; font-size:12px; letter-spacing:1px;">+ New Conversation</span>`;
+            historyList.appendChild(newChat);
+
+        } else {
+            historyList.innerHTML = `
+                <div style="padding: 40px 20px; text-align: center; color: white;">
+                    <div style="font-size: 24px; margin-bottom: 10px;">📭</div>
+                    <div style="font-weight: 500; margin-bottom: 5px;">No History Found</div>
+                    <div style="font-size: 12px; opacity: 0.6; margin-bottom: 20px;">Open a chat in your IDE to see it here.</div>
+                    <button class="empty-state-btn" onclick="hideChatHistory(); startNewChat();" style="display:inline-block; width:auto; padding: 10px 20px;">
+                        Start New Chat
+                    </button>
+                </div>
+            `;
+        }
+    } catch (e) {
+        console.error('History fetch error:', e);
+        historyList.innerHTML = `<div style="padding: 20px; color: var(--error); text-align:center;">Failed to load history.<br><span style="font-size:10px; opacity:0.5;">${e.message}</span></div>`;
+    }
 }
 
 function hideChatHistory() {
@@ -1258,7 +1307,7 @@ async function selectChat(title) {
         const res = await fetchWithAuth('/select-chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title })
+            body: JSON.stringify({ chatTitle: title })
         });
         const data = await res.json();
 
