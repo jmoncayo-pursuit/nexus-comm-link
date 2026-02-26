@@ -1215,6 +1215,23 @@ async function showChatHistory() {
     const historyLayer = document.getElementById('historyLayer');
     const historyList = document.getElementById('historyList');
 
+    // Injected search bar if not present
+    if (!document.getElementById('historySearchBox')) {
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'history-search-container';
+        searchContainer.innerHTML = `<input type="text" id="historySearchBox" class="history-search" placeholder="Select a conversation" autofocus />`;
+        historyLayer.insertBefore(searchContainer, historyList);
+
+        searchContainer.querySelector('input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const items = historyList.querySelectorAll('.history-item');
+            items.forEach(item => {
+                const title = item.querySelector('.history-item-title')?.textContent.toLowerCase() || '';
+                item.style.display = title.includes(term) ? 'flex' : 'none';
+            });
+        });
+    }
+
     // Show loading state
     historyList.innerHTML = `
         <div style="padding: 40px 20px; text-align: center; color: white;">
@@ -1230,37 +1247,47 @@ async function showChatHistory() {
         const res = await fetchWithAuth('/chat-history');
         const data = await res.json();
 
-        if (data.success && data.chats && data.chats.length > 0) {
+        if (data.success && data.blocks && data.blocks.length > 0) {
             historyList.innerHTML = '';
-            data.chats.forEach(chat => {
-                const item = document.createElement('div');
-                item.className = 'history-item';
-                item.onclick = () => {
-                    hideChatHistory();
-                    selectChat(chat.title);
-                };
-                item.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:16px;">
-                        <div style="width:36px; height:36px; border-radius:50%; background:rgba(34, 211, 238, 0.1); display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:18px;">💬</div>
-                        <div style="flex:1;">
-                            <div class="history-item-title" style="color:var(--text-main); font-weight:600; font-size:14px; margin-bottom:2px;">${escapeHtml(chat.title)}</div>
-                            <div class="history-item-date" style="color:var(--text-muted); font-size:11px;">${chat.date || 'Recent'}</div>
-                        </div>
-                    </div>
-                `;
-                historyList.appendChild(item);
-            });
 
-            // Add "New Chat" button at bottom
+            // Add "New Chat" button at top for convenience 
             const newChat = document.createElement('div');
             newChat.className = 'history-item';
-            newChat.style = "justify-content: center; background: rgba(34, 211, 238, 0.05); color: var(--accent); border: 1px dashed rgba(34, 211, 238, 0.3); margin: 16px; border-radius: 8px; text-align: center; padding: 12px;";
-            newChat.onclick = () => {
-                hideChatHistory();
-                startNewChat();
-            };
-            newChat.innerHTML = `<span style="font-weight:700; text-transform:uppercase; font-size:12px; letter-spacing:1px;">+ New Conversation</span>`;
+            newChat.style = "background: rgba(34, 211, 238, 0.05); color: var(--accent); border: 1px dashed rgba(34, 211, 238, 0.3); margin: 8px 16px; border-radius: 6px; justify-content: center; padding: 10px;";
+            newChat.onclick = () => { hideChatHistory(); startNewChat(); };
+            newChat.innerHTML = `<span style="font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1px;">+ New Conversation</span>`;
             historyList.appendChild(newChat);
+
+            data.blocks.forEach(block => {
+                if (block.type === 'header') {
+                    const header = document.createElement('div');
+                    header.className = 'history-section-header';
+                    header.textContent = block.title;
+                    historyList.appendChild(header);
+                } else if (block.type === 'chat') {
+                    const item = document.createElement('div');
+                    item.className = `history-item ${block.active ? 'active' : ''}`;
+                    item.onclick = () => {
+                        hideChatHistory();
+                        selectChat(block.title);
+                    };
+                    item.innerHTML = `
+                        <div class="history-item-icon">💬</div>
+                        <div class="history-item-content">
+                            <div class="history-item-title">${escapeHtml(block.title)}</div>
+                            <div class="history-item-meta">
+                                <span class="history-item-project">${escapeHtml(block.project || '')}</span>
+                            </div>
+                        </div>
+                    `;
+                    historyList.appendChild(item);
+                } else if (block.type === 'action') {
+                    const action = document.createElement('div');
+                    action.className = 'history-show-more';
+                    action.textContent = block.title;
+                    historyList.appendChild(action);
+                }
+            });
 
         } else {
             historyList.innerHTML = `
