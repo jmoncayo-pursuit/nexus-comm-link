@@ -45,6 +45,7 @@ chmod +x start_nexus_connect.sh
 
 ## Documentation
 - [Design Philosophy](DESIGN_PHILOSOPHY.md) - Rationale and design decisions.
+- [Technical Manifest](MANIFEST.md) - Technical architecture and implementation details.
 - [Security Model](SECURITY.md) - Authentication and connection security.
 
 ---
