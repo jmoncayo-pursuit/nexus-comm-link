@@ -144,11 +144,13 @@ const MODELS = [
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${protocol}//${window.location.host}`);
+    window.nexusSocket = ws; // Fix: Assign to global for voice engine
 
     ws.onopen = () => {
         console.log('WS Connected');
         updateStatus(true, lastCdpStatus);
         loadSnapshot();
+        if (typeof initLiveAudio === 'function') initLiveAudio(); // Pre-init audio player
     };
 
     ws.onmessage = (event) => {
@@ -163,11 +165,15 @@ function connectWebSocket() {
         if (data.type === 'status_update') {
             updateBootServerStatus(data.cdpConnected, data.apiConnected);
         }
+        if (data.type === 'audio_narrator' && typeof playNarratorChunk === 'function') {
+            playNarratorChunk(data.data); // data.data is base64
+        }
     };
 
     ws.onclose = () => {
         console.log('WS Disconnected');
         updateStatus(false, false);
+        window.nexusSocket = null; // Clean up
         setTimeout(connectWebSocket, 2000);
     };
 }
@@ -239,8 +245,11 @@ async function loadSnapshot(force = false) {
         const scrollPos = chatContainer.scrollTop;
         const scrollHeight = chatContainer.scrollHeight;
         const clientHeight = chatContainer.clientHeight;
-        const isNearBottom = scrollHeight - scrollPos - clientHeight < 50;
+        const isNearBottom = scrollHeight - scrollPos - clientHeight < 120; // Increased threshold
         const isNearTop = scrollPos < 300;
+
+        // Check if user has recently scrolled and "locked" the view
+        const isLocked = Date.now() < userScrollLockUntil;
 
         // --- THE GOLDEN RULE OF SCROLLING ---
         // If the user is actively reading in the middle of the document, 
@@ -258,6 +267,11 @@ async function loadSnapshot(force = false) {
                 sendBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" style="fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;" /></svg>`;
             }
             return;
+        }
+
+        // If the view is locked (user is reading), don't replace DOM unless they are at the bottom
+        if (isLocked && !isNearBottom && !force && !isFirstLoad) {
+            pendingSnapshotData = data;
             return;
         }
 
@@ -379,6 +393,11 @@ async function loadSnapshot(force = false) {
             '    font-family: \'JetBrains Mono\', monospace !important;\n' +
             '    border-radius: 4px;\n' +
             '    border: 1px solid rgba(34, 211, 238, 0.3);\n' +
+            '    max-width: 100% !important;\n' +
+            '    overflow-x: auto !important;\n' +
+            '    box-sizing: border-box !important;\n' +
+            '    word-wrap: break-word !important;\n' +
+            '    white-space: pre-wrap !important;\n' +
             '}\n' +
             '\n' +
             '/* Thought Caret / Details Styling */\n' +
@@ -532,7 +551,44 @@ async function loadSnapshot(force = false) {
             .replace(/\s+/g, ' ');
 
         if (cleanedForCompare !== lastHtmlHash) {
-            chatContent.innerHTML = data.html;
+            // Task: Sync Expandable States
+            // Capture all <details> states on the phone BEFORE diffing/wiping
+            const detailsNodes = Array.from(chatContent.querySelectorAll('details'));
+            const openMap = new Map();
+            detailsNodes.forEach(d => {
+                const summary = d.querySelector('summary');
+                if (summary && d.open) {
+                    openMap.set(summary.textContent.trim(), true);
+                }
+            });
+
+            // Re-render
+            if (window.morphdom) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = data.html;
+                morphdom(chatContent, tempDiv, {
+                    childrenOnly: true,
+                    onBeforeElUpdated: function (fromEl, toEl) {
+                        if (fromEl.tagName === 'DETAILS' && toEl.tagName === 'DETAILS') {
+                            if (fromEl.open) {
+                                toEl.setAttribute('open', '');
+                                toEl.open = true;
+                            }
+                        }
+                        return true;
+                    }
+                });
+            } else {
+                chatContent.innerHTML = data.html;
+                // Re-apply states so mobile users can open thoughts!
+                Array.from(chatContent.querySelectorAll('details')).forEach(d => {
+                    const summary = d.querySelector('summary');
+                    if (summary && openMap.has(summary.textContent.trim())) {
+                        d.open = true;
+                    }
+                });
+            }
+
             lastHtmlHash = cleanedForCompare;
         }
 
@@ -1138,7 +1194,7 @@ chatContainer.addEventListener('scroll', () => {
     userScrollLockUntil = Date.now() + USER_SCROLL_LOCK_DURATION;
     clearTimeout(idleTimer);
 
-    const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 50;
+    const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 120;
     if (isNearBottom) {
         scrollToBottomBtn.classList.remove('show');
         userScrollLockUntil = 0;
@@ -1996,14 +2052,157 @@ function hideVoiceTranscript() {
     }
 }
 
-// Wire up voice button
+// Wire up voice button (Speech-to-Text)
 const voiceBtn = document.getElementById('voiceBtn');
 if (voiceBtn) {
     voiceBtn.addEventListener('click', toggleVoice);
 }
 
+// Wire up Gemini Live button (Bidirectional Audio)
+const liveAudioBtn = document.getElementById('liveAudioBtn');
+if (liveAudioBtn) {
+    liveAudioBtn.addEventListener('click', () => {
+        if (isLiveActive) {
+            stopLiveConvo();
+        } else {
+            startLiveConvo();
+        }
+    });
+}
+
 // Init voice engine
 initVoice();
+initLiveAudio();
+
+// ============================================
+//  NEXUS LIVE AUDIO — "Gemini Live" Protocol
+// ============================================
+
+let livePlayerNode = null;
+let liveRecorderNode = null;
+let liveAudioContext = null;
+let liveRecorderContext = null;
+let liveAudioStream = null;
+let isLiveActive = false;
+
+async function initLiveAudio() {
+    // Eagerly spin up the 24kHz player so greeting audio isn't dropped
+    // before the user taps the mic.
+    try {
+        if (!liveAudioContext) {
+            liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            if (liveAudioContext.state === 'suspended') await liveAudioContext.resume();
+            await liveAudioContext.audioWorklet.addModule('/js/pcm-player-processor.js');
+            livePlayerNode = new AudioWorkletNode(liveAudioContext, 'pcm-player-processor');
+            livePlayerNode.connect(liveAudioContext.destination);
+            console.log('🔊 Narrator player ready (24kHz).');
+        }
+    } catch (e) {
+        console.warn('Could not pre-init audio player (will retry on mic tap):', e);
+    }
+
+    // Listen for incoming narrator audio
+    if (window.nexusSocket) {
+        window.nexusSocket.addEventListener('message', async (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'audio_narrator') {
+                    playNarratorChunk(data.data); // data.data is base64
+                }
+            } catch (e) { }
+        });
+    }
+}
+
+async function startLiveConvo() {
+    if (isLiveActive) return stopLiveConvo();
+
+    showToast("Initializing Live Session...", "processing");
+    try {
+        // --- 1. Audio Player Setup (24kHz) ---
+        liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        if (liveAudioContext.state === 'suspended') await liveAudioContext.resume();
+        await liveAudioContext.audioWorklet.addModule('/js/pcm-player-processor.js');
+        livePlayerNode = new AudioWorkletNode(liveAudioContext, "pcm-player-processor");
+        livePlayerNode.connect(liveAudioContext.destination);
+
+        // --- 2. Audio Recorder Setup (16kHz) ---
+        liveRecorderContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        if (liveRecorderContext.state === 'suspended') await liveRecorderContext.resume();
+        await liveRecorderContext.audioWorklet.addModule('/js/pcm-recorder-processor.js');
+
+        liveAudioStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+
+        const source = liveRecorderContext.createMediaStreamSource(liveAudioStream);
+        liveRecorderNode = new AudioWorkletNode(liveRecorderContext, "pcm-recorder-processor");
+        source.connect(liveRecorderNode);
+
+        liveRecorderNode.port.onmessage = (event) => {
+            if (!isLiveActive) return;
+            const pcmData = event.data; // This is an ArrayBuffer of Int16
+
+            // Send to server
+            if (window.nexusSocket && window.nexusSocket.readyState === WebSocket.OPEN) {
+                let binary = '';
+                const bytes = new Uint8Array(pcmData);
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                window.nexusSocket.send(JSON.stringify({
+                    type: 'audio_stream',
+                    audio: btoa(binary),
+                    mimeType: 'audio/pcm;rate=16000'
+                }));
+            }
+        };
+
+        isLiveActive = true;
+        const btn = document.getElementById('liveAudioBtn');
+        if (btn) btn.classList.add('active');
+        showToast("Live Session Active", "success");
+    } catch (err) {
+        console.error("Live Audio failed:", err);
+        showToast("Live Audio Refused", "error");
+    }
+}
+
+function stopLiveConvo() {
+    isLiveActive = false;
+    if (liveAudioStream) liveAudioStream.getTracks().forEach(t => t.stop());
+    if (livePlayerNode) livePlayerNode.disconnect();
+    if (liveRecorderNode) liveRecorderNode.disconnect();
+    if (liveAudioContext) liveAudioContext.close();
+    if (liveRecorderContext) liveRecorderContext.close();
+
+    livePlayerNode = null;
+    liveRecorderNode = null;
+
+    const btn = document.getElementById('liveAudioBtn');
+    if (btn) btn.classList.remove('active');
+    showToast("Live Session Ended", "info");
+}
+
+async function playNarratorChunk(base64Data) {
+    if (!livePlayerNode) return;
+    try {
+        const cleaned = base64Data.replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(cleaned);
+        const len = raw.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = raw.charCodeAt(i);
+        }
+
+        // Send raw bytes buffer directly to Player Worklet
+        livePlayerNode.port.postMessage(bytes.buffer);
+    } catch (e) {
+        console.error("Error decoding narrator chunk", e);
+    }
+}
+
 // Nexus Notification Hub
 function showToast(message, type = "info") {
     const toast = document.getElementById('nexusToast');

@@ -3,9 +3,10 @@ import fs from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import * as NexusService from '../services/nexus_service.js';
+import { NexusService } from '../../internal/core-logic/index.js';
 import { inspectUI } from '../../ui_inspector.js';
 import { isPortOpen } from '../services/utils.js';
+import { configService } from '../services/config_service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -75,6 +76,7 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
     // Remote Action Relay (Apply/Accept/Reject buttons)
     router.post('/relay-action', cdpWrapper((cdp, body) => NexusService.clickActionButton(cdp, body.action)));
     router.post('/undo', cdpWrapper((cdp) => NexusService.triggerUndo(cdp)));
+    router.post('/close-history', cdpWrapper((cdp) => NexusService.closeHistory(cdp)));
 
     // File Peek Utility
     router.get('/file-peek', (req, res) => {
@@ -114,10 +116,18 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
     // Boot Server
     router.post('/boot-server', (req, res) => {
         try {
-            const projectRoot = join(__dirname, '../../..');
-            const proc = spawn('./dev.sh', [], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+            const bootCmd = configService.getBootCommand();
+            if (!bootCmd) return res.status(400).json({ error: 'No boot command found for this project.' });
+
+            const projectRoot = configService.projectRoot || join(__dirname, '../../..');
+
+            const cmdParts = bootCmd.split(' ');
+            const mainCmd = cmdParts[0];
+            const args = cmdParts.slice(1);
+
+            const proc = spawn(mainCmd, args, { cwd: projectRoot, detached: true, stdio: 'ignore' });
             proc.unref();
-            res.json({ success: true, message: "Nexus Server Booting..." });
+            res.json({ success: true, message: `Booting ${configService.getProjectName()}...` });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
@@ -126,13 +136,28 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
     // Stop Server
     router.post('/stop-server', (req, res) => {
         try {
-            const projectRoot = join(__dirname, '../../..');
-            const proc = spawn('./stop_server.sh', [], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+            const stopCmd = configService.getStopCommand();
+            if (!stopCmd) return res.status(400).json({ error: 'No stop command found for this project.' });
+
+            const projectRoot = configService.projectRoot || join(__dirname, '../../..');
+
+            const cmdParts = stopCmd.split(' ');
+            const mainCmd = cmdParts[0];
+            const args = cmdParts.slice(1);
+
+            const proc = spawn(mainCmd, args, { cwd: projectRoot, detached: true, stdio: 'ignore' });
             proc.unref();
-            res.json({ success: true, message: "Nexus Server Stopping..." });
+            res.json({ success: true, message: `Stopping ${configService.getProjectName()}...` });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
+    });
+
+    router.get('/project-info', (req, res) => {
+        res.json({
+            name: configService.getProjectName(),
+            healthUrl: configService.getHealthUrl()
+        });
     });
 
     router.post('/remote-scroll', async (req, res) => {

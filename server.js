@@ -10,7 +10,7 @@ import fs from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { BridgeService } from './api/services/bridge_service.js';
+import { BridgeService, LiveAgentService } from './internal/core-logic/index.js';
 import { killPortProcess, hashString, isLocalRequest } from './api/services/utils.js';
 import { createRoutes } from './api/routes/app_routes.js';
 
@@ -40,6 +40,7 @@ async function main() {
 
     const wss = new WebSocketServer({ server });
     const bridge = new BridgeService(wss);
+    const liveAgent = new LiveAgentService(bridge);
 
     app.use(compression());
     app.use(express.json({ limit: '50mb' }));
@@ -82,6 +83,10 @@ async function main() {
             }
         }
         console.log('📱 Client connected (Authenticated)');
+
+        ws.on('message', (message) => {
+            bridge.handleMessage(ws, message);
+        });
     });
 
     // 6. Start Services
@@ -91,6 +96,7 @@ async function main() {
     });
 
     bridge.startPolling();
+    liveAgent.start();
 }
 
 process.on('SIGINT', () => process.exit(0));

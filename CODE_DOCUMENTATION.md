@@ -1,5 +1,7 @@
 # CODE DOCUMENTATION - Nexus Comm-Link
 
+> 🧠 **Elite-DX Standards**: This project follows the [Elite Developer Experience Standards](docs/ELITE-DX.md) for zero-spam, high-signal logging.
+
 ## Project Structure
 ```text
 nexus_comm_link/

@@ -83,11 +83,15 @@ def generate_passcode():
 def print_qr(url):
     """Generates and prints a QR code to the terminal."""
     import qrcode
-    qr = qrcode.QRCode(version=1, box_size=1, border=1)
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=0,
+    )
     qr.add_data(url)
     qr.make(fit=True)
-    # Using 'ANSI' implies standard block characters which work in most terminals
-    # invert=True is often needed for dark terminals (white blocks on black bg)
+    print("\n" + " " * 4 + "SCAN TO CONNECT")
     qr.print_ascii(invert=True)
 
 # -----------------------------------------------------------------------------
@@ -163,21 +167,18 @@ def main():
             
             final_url = f"{protocol}://{ip}:{port}"
             
-            print("\n" + "="*50)
+            print("\n" + "─"*30)
             print(f"📡 LOCAL WIFI ACCESS")
-            print("="*50)
-            print(f"🔗 URL: {final_url}")
-            print(f"🔑 Passcode: Not required for local WiFi (Auto-detected)")
+            print("─"*30)
+            print(f"🔗 {final_url}")
+            print("─"*30)
             
-            print("\n📱 Scan this QR Code to connect:")
             print_qr(final_url)
 
-            print("-" * 50)
-            print("📝 Steps to Connect:")
-            print("1. Ensure your phone is on the SAME Wi-Fi network as this computer.")
-            print("2. Open your phone's Camera app or a QR scanner.")
-            print("3. Scan the code above OR manually type the URL into your browser.")
-            print("4. You should be connected automatically!")
+            print("\n" + "─"*30)
+            print("1. Phone on same Wi-Fi.")
+            print("2. Scan or type the URL.")
+            print("─"*30)
             
         elif args.mode == 'web':
             # Check Ngrok Token

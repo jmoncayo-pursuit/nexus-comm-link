@@ -16,8 +16,12 @@ if [ ! -f ".env" ]; then
     fi
 fi
 
+# Check for Virtual Environment
+if [ -d "venv" ]; then
+    echo "[INFO] Using virtual environment..."
+    PYTHON_CMD="./venv/bin/python3"
 # Check for Python
-if command -v python3 &> /dev/null; then
+elif command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
 elif command -v python &> /dev/null; then
     PYTHON_CMD="python"
