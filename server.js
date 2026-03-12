@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { BridgeService } from './api/services/bridge_service.js';
 import { killPortProcess, hashString, isLocalRequest } from './api/services/utils.js';
 import { createRoutes } from './api/routes/app_routes.js';
+import { VoiceService } from './api/services/voice_service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,6 +41,7 @@ async function main() {
 
     const wss = new WebSocketServer({ server });
     const bridge = new BridgeService(wss);
+    const voiceService = new VoiceService(bridge);
 
     app.use(compression());
     app.use(express.json({ limit: '50mb' }));
@@ -82,6 +84,26 @@ async function main() {
             }
         }
         console.log('📱 Client connected (Authenticated)');
+
+        ws.on('message', (message) => {
+            try {
+                const data = JSON.parse(message);
+                console.log('📬 Client Message:', data.type);
+                if (data.type === 'voice_start') {
+                    voiceService.startSession(ws);
+                } else if (data.type === 'voice_stop') {
+                    voiceService.stopSession();
+                } else if (data.type === 'voice_audio') {
+                    voiceService.handleClientAudio(data.data);
+                }
+            } catch (e) {
+                // Ignore non-JSON or other errors
+            }
+        });
+
+        ws.on('close', () => {
+            voiceService.stopSession();
+        });
     });
 
     // 6. Start Services

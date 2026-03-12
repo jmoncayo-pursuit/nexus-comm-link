@@ -163,6 +163,17 @@ function connectWebSocket() {
         if (data.type === 'status_update') {
             updateBootServerStatus(data.cdpConnected, data.apiConnected);
         }
+        if (data.type === 'voice_status') {
+            if (data.status === 'ready' && window.nexusVoice) {
+                window.nexusVoice.setReady();
+            }
+        }
+        if (data.type === 'voice_audio') {
+            if (window.nexusVoice) window.nexusVoice.playAudio(data.data);
+        }
+        if (data.type === 'voice_transcript') {
+            if (window.nexusVoice) window.nexusVoice.updateTranscript(data.text);
+        }
     };
 
     ws.onclose = () => {
@@ -532,8 +543,19 @@ async function loadSnapshot(force = false) {
             .replace(/\s+/g, ' ');
 
         if (cleanedForCompare !== lastHtmlHash) {
+            // Stabilize height before update to prevent "twitching"
+            const currentHeight = chatContent.offsetHeight;
+            chatContent.style.minHeight = currentHeight + 'px';
+            
             chatContent.innerHTML = data.html;
             lastHtmlHash = cleanedForCompare;
+            
+            // Clear min-height after a brief delay to allow natural resizing
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    chatContent.style.minHeight = '0px';
+                }, 100);
+            });
         }
 
         // Smart Scroll Handling
@@ -1924,6 +1946,200 @@ function initVoice() {
     };
 }
 
+class NexusVoice {
+    constructor() {
+        this.ctx = null;
+        this.processor = null;
+        this.stream = null;
+        this.isActive = false;
+        this.isReady = false;
+        this.transcriptEl = document.getElementById('voiceLiveTranscript');
+        this.overlay = document.getElementById('voiceLiveOverlay');
+        this.isReady = false;
+        this.nextPlayTime = 0; // For scheduled queue
+        this.liveBtn = document.getElementById('liveBtn');
+        
+        // No separate stop button, the live button toggles.
+    }
+
+    async start() {
+        if (this.isActive) return;
+        this.nextPlayTime = 0;
+        console.log('[VOICE] Starting voice session...');
+        if (this.liveBtn) this.liveBtn.classList.add('active');
+        if (this.transcriptEl) this.transcriptEl.textContent = "Connecting to Gemini...";
+        try {
+            showToast('Initializing Audio...', 'info');
+            // Allow native rate for better stability, but log what we get
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            showToast(`Audio Rate: ${this.ctx.sampleRate}Hz`, 'info');
+            
+            if (this.ctx.state === 'suspended') {
+                showToast('Resuming Audio Context...', 'info');
+                await this.ctx.resume();
+            }
+            console.log('[VOICE] AudioContext state:', this.ctx.state);
+
+            showToast('Requesting Mic Access...', 'info');
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('[VOICE] Mic stream obtained');
+            showToast('Mic Active', 'success');
+            const source = this.ctx.createMediaStreamSource(this.stream);
+            
+            // ScriptProcessorNode for wide compatibility
+            this.processor = this.ctx.createScriptProcessor(2048, 1, 1);
+            
+            this.processor.onaudioprocess = (e) => {
+                if (!this.isActive || !this.isReady) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                
+                // Adaptive Downsampling to 16kHz for Gemini
+                const targetRate = 16000;
+                const ratio = this.ctx.sampleRate / targetRate;
+                const newLength = Math.floor(inputData.length / ratio);
+                const pcmData = new Int16Array(newLength);
+                
+                for (let i = 0; i < newLength; i++) {
+                    const sampleIdx = Math.floor(i * ratio);
+                    const s = Math.max(-1, Math.min(1, inputData[sampleIdx]));
+                    pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'voice_audio', data: base64 }));
+                }
+            };
+
+            source.connect(this.processor);
+            this.processor.connect(this.ctx.destination);
+            
+            this.isActive = true;
+            if (this.overlay) {
+                this.overlay.classList.add('active');
+                // Ensure the background remains scrollable by explicitly allowing pointer events
+                // on the parent if needed, but the CSS handles the 'none' on container.
+            }
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                showToast('Signing into Gemini...', 'info');
+                ws.send(JSON.stringify({ type: 'voice_start' }));
+            } else {
+                console.error('[VOICE] WebSocket not open, state:', ws ? ws.readyState : 'null');
+                showToast('Link to Nexus not active', 'error');
+                this.stop();
+                return;
+            }
+            showToast('Voice Link Established', 'success');
+        } catch (err) {
+            console.error('[VOICE] Voice start failed:', err);
+            showToast(`Mic Error: ${err.message || 'Denied'}`, 'error');
+            this.stop();
+        }
+    }
+
+    stop() {
+        if (!this.isActive) return;
+        this.isActive = false;
+        this.isReady = false;
+        if (this.liveBtn) this.liveBtn.classList.remove('active');
+        if (this.overlay) this.overlay.classList.remove('active');
+        
+        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+        if (this.processor) this.processor.disconnect();
+        if (this.ctx) this.ctx.close();
+        
+        this.stream = null;
+        this.processor = null;
+        this.ctx = null;
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'voice_stop' }));
+        }
+        showToast('Voice Link Closed');
+    }
+
+    playAudio(base64) {
+        if (!this.isActive || !this.ctx) return;
+        
+        try {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            
+            const pcm = new Int16Array(bytes.buffer);
+            const floatData = new Float32Array(pcm.length);
+            for (let i = 0; i < pcm.length; i++) {
+                // Conversion + Boost Gain for phone speakers
+                floatData[i] = (pcm[i] / (pcm[i] < 0 ? 0x8000 : 0x7FFF)) * 1.5;
+            }
+
+            // Linear Interpolation Resampling (24kHz -> Native)
+            const inputRate = 24000;
+            const outputRate = this.ctx.sampleRate;
+            const ratio = inputRate / outputRate;
+            const targetLength = Math.floor(floatData.length / ratio);
+            const resampled = new Float32Array(targetLength);
+
+            for (let i = 0; i < targetLength; i++) {
+                const pos = i * ratio;
+                const idx = Math.floor(pos);
+                const fract = pos - idx;
+                if (idx + 1 < floatData.length) {
+                    resampled[i] = floatData[idx] * (1 - fract) + floatData[idx + 1] * fract;
+                } else {
+                    resampled[i] = floatData[idx];
+                }
+            }
+
+            const buffer = this.ctx.createBuffer(1, resampled.length, outputRate);
+            buffer.getChannelData(0).set(resampled);
+            
+            const source = this.ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.ctx.destination);
+
+            // SCHEDULING QUEUE: Prevents rapid/overlapping speech
+            const now = this.ctx.currentTime;
+            const startTime = Math.max(now, this.nextPlayTime);
+            
+            source.start(startTime);
+            this.nextPlayTime = startTime + buffer.duration;
+            
+        } catch (e) {
+            console.error('[VOICE] Playback error:', e);
+        }
+    }
+
+    updateTranscript(text) {
+        if (!this.isActive || !this.transcriptEl) return;
+        this.transcriptEl.textContent = text;
+    }
+
+    setReady() {
+        this.isReady = true;
+        showToast('Neural Link Ready', 'success');
+        if (this.transcriptEl && this.isActive) {
+            this.transcriptEl.textContent = "Listening...";
+        }
+    }
+}
+
+const nexusVoice = new NexusVoice();
+window.nexusVoice = nexusVoice;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const voiceBtn = document.getElementById('voiceBtn');
+    if (voiceBtn) {
+        voiceBtn.addEventListener('click', toggleTranscription);
+    }
+
+    const liveBtn = document.getElementById('liveBtn');
+    if (liveBtn) {
+        liveBtn.addEventListener('click', toggleLiveVoice);
+    }
+});
+
 function processVoiceCommand(transcript) {
     const lower = transcript.toLowerCase().trim();
 
@@ -1944,23 +2160,6 @@ function processVoiceCommand(transcript) {
     // No mapping — send raw transcript (sanitized)
     const sanitized = transcript.trim().replace(/\s+/g, ' ');
     return { command: sanitized, display: sanitized };
-}
-
-function toggleVoice() {
-    if (!voiceRecognition) {
-        initVoice();
-        if (!voiceRecognition) return;
-    }
-
-    if (isListening) {
-        voiceRecognition.stop();
-    } else {
-        try {
-            voiceRecognition.start();
-        } catch (e) {
-            console.error('Failed to start voice:', e);
-        }
-    }
 }
 
 function stopListening() {
@@ -1985,13 +2184,33 @@ function hideVoiceTranscript() {
     }
 }
 
-// Wire up voice button
-const voiceBtn = document.getElementById('voiceBtn');
-if (voiceBtn) {
-    voiceBtn.addEventListener('click', toggleVoice);
+function toggleTranscription() {
+    if (!voiceRecognition) {
+        initVoice();
+        if (!voiceRecognition) return;
+    }
+
+    if (isListening) {
+        voiceRecognition.stop();
+    } else {
+        try {
+            voiceRecognition.start();
+        } catch (e) {
+            console.error('Failed to start transcription:', e);
+        }
+    }
 }
 
-// Init voice engine
+function toggleLiveVoice() {
+    console.log('[VOICE] Toggle triggered. Active:', nexusVoice.isActive);
+    if (nexusVoice.isActive) {
+        nexusVoice.stop();
+    } else {
+        nexusVoice.start();
+    }
+}
+
+// Init engines
 initVoice();
 // Nexus Notification Hub
 function showToast(message, type = "info") {

@@ -494,10 +494,18 @@ body {
     overflow-x: hidden;
     position: relative;
     background: var(--bg-app);
+    overflow-anchor: auto; /* Prevent jitter during generation */
+    -webkit-overflow-scrolling: touch;
 }
 
 .chat-content {
     padding: 8px 12px 4px;
+    contain: layout; /* Stabilize content blocks */
+    min-height: 100%;
+}
+
+.chat-content * {
+    transition: none !important; /* Kill all sub-element transitions to stop "twitching" */
 }
 
 .loading-state {
@@ -577,6 +585,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    position: relative;
+    z-index: 1100; /* Higher than voice overlay */
 }
 
 .input-wrapper {
@@ -1214,7 +1224,7 @@ textarea::-webkit-scrollbar {
     background: transparent;
     border: none;
     color: var(--text-muted);
-    width: 36px;
+    width: 32px; /* Slightly smaller */
     height: 36px;
     border-radius: 50%;
     display: flex;
@@ -1226,6 +1236,53 @@ textarea::-webkit-scrollbar {
     align-self: flex-end;
     margin-bottom: 2px;
     position: relative;
+    margin-right: -4px;
+}
+
+.live-btn {
+    background: rgba(34, 211, 238, 0.1); 
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    color: var(--accent);
+    width: 48px; 
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    align-self: flex-end;
+    margin-bottom: -2px; /* Center with 36px buttons */
+    position: relative;
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.2);
+    margin-left: 8px;
+    z-index: 1000; /* Ensure it stays above the overlay */
+}
+
+.live-btn svg {
+    width: 26px;
+    height: 26px;
+}
+
+.live-btn:hover {
+    background: rgba(34, 211, 238, 0.2);
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.4);
+}
+
+.live-btn.active {
+    color: #ffffff;
+    background: #ef4444;
+    border-color: #f87171;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+    animation: live-pulse 2s infinite;
+}
+
+@keyframes live-pulse {
+    0% { transform: scale(1); box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+    50% { transform: scale(1.1); box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); }
+    100% { transform: scale(1); box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
 }
 
 .voice-btn svg {
@@ -1295,11 +1352,102 @@ textarea::-webkit-scrollbar {
         opacity: 0;
         transform: translateX(-50%) translateY(10px);
     }
-
     to {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
     }
+}
+
+/* Voice Live Overlay - Bottom Bar Version */
+.voice-live-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 180px; 
+    background: linear-gradient(to top, var(--bg-panel) 80%, rgba(15, 23, 42, 0));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 1000; /* Just below input section buttons */
+    display: none;
+    align-items: flex-start; /* Align bar to top of this area */
+    justify-content: center;
+    padding: 20px;
+    border-top: 1px solid rgba(34, 211, 238, 0.2);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+    pointer-events: none; 
+}
+
+.voice-live-overlay.active {
+    display: flex;
+}
+
+.voice-live-bar {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: rgba(34, 211, 238, 0.05);
+    padding: 12px 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    pointer-events: auto; /* Allow interaction with the bar if needed */
+}
+
+.voice-waveform-mini {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    flex-shrink: 0;
+}
+
+.voice-waveform-mini .wave-bar {
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    height: 6px;
+    animation: wave-animation-mini 1s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--accent);
+}
+
+.voice-waveform-mini .wave-bar:nth-child(1) { animation-delay: 0.1s; }
+.voice-waveform-mini .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+.voice-waveform-mini .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+.voice-waveform-mini .wave-bar:nth-child(4) { animation-delay: 0.4s; }
+.voice-waveform-mini .wave-bar:nth-child(5) { animation-delay: 0.5s; }
+
+@keyframes wave-animation-mini {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(3); }
+}
+
+.voice-live-transcript {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-main);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.9;
+}
+
+.voice-live-indicator {
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    animation: live-blink 1.5s infinite;
+}
+
+@keyframes live-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 /* Optimistic Thinking Bubble */

@@ -126,7 +126,7 @@
             <textarea id="messageInput" placeholder="Enter message..." rows="1"
                 style="font-family: 'Inter', sans-serif; font-size: 14px; letter-spacing: 0.5px;"></textarea>
 
-            <button class="voice-btn" id="voiceBtn" aria-label="Voice Command">
+            <button class="voice-btn" id="voiceBtn" aria-label="Microphone Transcription">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -135,6 +135,16 @@
                 </svg>
                 <div class="voice-pulse" id="voicePulse"></div>
             </button>
+
+            <button class="live-btn" id="liveBtn" aria-label="Gemini Live">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="4" y="8" width="2.5" height="8" rx="1.25" />
+                    <rect x="9" y="4" width="2.5" height="16" rx="1.25" />
+                    <rect x="14" y="9" width="2.5" height="6" rx="1.25" />
+                    <rect x="19" y="6.5" width="2.5" height="11" rx="1.25" />
+                </svg>
+            </button>
+
             <button class="send-btn" id="sendBtn" aria-label="Send">
                 <svg viewBox="0 0 24 24">
                     <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
@@ -152,6 +162,27 @@
             <div style="margin-top:20px; text-align:center;">
                 <button onclick="closeModal()"
                     style="background:transparent; border:none; color:var(--text-muted); padding:10px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Live Overlay (Bottom Bar) -->
+    <div id="voiceLiveOverlay" class="voice-live-overlay">
+        <div class="voice-live-bar">
+            <div class="voice-waveform-mini" id="voiceWaveformMini">
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+            </div>
+            
+            <div id="voiceLiveTranscript" class="voice-live-transcript">
+                Connecting to Nexus...
+            </div>
+
+            <div class="voice-live-indicator">
+                LIVE
             </div>
         </div>
     </div>
@@ -192,7 +223,7 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=3.0"></script>
+    <script src="js/app.js?v=3.6"></script>
 </body>
 
 </html>
