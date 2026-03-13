@@ -71,11 +71,15 @@ export class BridgeService {
                 if (this.cdpConnection && this.cdpConnection.readyState === WebSocket.OPEN) {
                     const snapshot = await captureSnapshot(this.cdpConnection);
                     if (snapshot && !snapshot.error) {
+                        // HYPER-AGGRESSIVE CLEANING: Strip everything that isn't core content 
+                        // to prevent phantom "twitchy" updates. We only care if the TEXT or 
+                        // the TAG structure changes.
                         const htmlForHash = snapshot.html
-                            .replace(/id="[^"]*P0-\d+[^"]*"/g, '')
-                            .replace(/data-tooltip-id="[^"]*"/g, '')
-                            .replace(/data-headlessui-state="[^"]*"/g, '')
-                            .replace(/\s+/g, ' ');
+                            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Strip inline styles
+                            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Strip scripts
+                            .replace(/ (id|class|style|aria-[a-z]+|data-[a-z0-9-]+)="[^"]*"/gi, '') // Strip ALL attributes
+                            .replace(/>\s+</g, '><') // Normalize whitespace between tags
+                            .trim();
 
                         const hash = hashString(htmlForHash);
                         if (hash !== this.lastSnapshotHash) {

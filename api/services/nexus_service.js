@@ -98,6 +98,9 @@ export async function captureSnapshot(cdp) {
                 } catch(e) {}
             }
 
+            // NEW: Aggressively remove blinking cursors and empty decorations that cause "twitching"
+            clone.querySelectorAll('[class*="cursor"], [class*="cursor-container"], [style*="visibility: hidden"], .decorationsOverviewRuler').forEach(el => el.remove());
+
             clone.querySelectorAll('img, svg, i, span[class*="icon"], span[class*="codicon"]').forEach(el => {
                 const attrStr = (el.outerHTML || '').toLowerCase();
                 const isVSCode = attrStr.includes('vscode') || attrStr.includes('extension') || attrStr.includes('icon');
