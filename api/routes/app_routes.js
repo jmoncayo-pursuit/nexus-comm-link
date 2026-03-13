@@ -10,7 +10,7 @@ import { isPortOpen } from '../services/utils.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export function createRoutes(bridgeService, appPassword, authToken, authCookieName) {
+export function createRoutes(bridgeService, voiceService, appPassword, authToken, authCookieName) {
     const router = express.Router();
 
     // Login
@@ -171,6 +171,16 @@ export function createRoutes(bridgeService, appPassword, authToken, authCookieNa
         const cdp = bridgeService.getConnection();
         if (!cdp) return res.status(503).json({ error: 'CDP not connected' });
         res.json(await inspectUI(cdp));
+    });
+
+    // Task Completion Reporting for Voice Agent
+    router.post('/task-complete', (req, res) => {
+        const { task } = req.body;
+        if (!task) return res.status(400).json({ error: 'Missing task name' });
+        
+        console.log(`🛎️ Task completion signal received: ${task}`);
+        voiceService.reportTaskComplete(task);
+        res.json({ success: true });
     });
 
     return router;

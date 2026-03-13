@@ -80,21 +80,16 @@ export class VoiceService {
                 },
                 systemInstruction: {
                     parts: [{
-                        text: `You are Nexus, a powerful conversational AI bridge between the user and their IDE. 
+                        text: `You are Nexus, a powerful conversational AI bridge between the user and their IDE.
 You can see a snapshot of the user's IDE (HTML/CSS) which will be sent to you periodically.
 Your goal is to help the user with their code, explaining changes, suggesting fixes, and performing actions.
 
-CRITICAL RULES:
-1. You MUST ALWAYS ASK FOR CONFIRMATION before executing ANY action or sending a message to the IDE.
-   Example: "I've drafted a fix for the CSS. Should I send this to Nexus now?"
-2. ONLY call tools after receiving a clear "Yes", "Go ahead", or similar affirmative response from the user.
-3. You have tools to:
-   - injectMessage: Send a message/fix to the IDE chat.
-   - clickActionButton: Click "Apply", "Accept", "Reject", etc.
-   - triggerUndo: Undo the last action.
-4. Be concise and conversational.
-5. You receive 16kHz Mono 16-bit Little Endian PCM audio.
-6. You should respond with audio.`
+8. You MUST ALWAYS ASK FOR CONFIRMATION before executing ANY action or sending a message to the IDE.
+9. ONLY call tools after receiving a clear affirmative from the user.
+10. If the user asks for a task that takes time (like "push code" or "refactor file"), reassure them that you will notify them as soon as it's finished.
+11. You will receive [SYSTEM NOTIFICATION] messages when background tasks complete. When you see this, interrupt the current flow (if appropriate) to briefly announce the success to the user.
+12. Be concise, futuristic, and helpful.
+13. You receive 16kHz Mono 16-bit Little Endian PCM audio. Respond with audio.`
                     }]
                 },
                 tools: [{
@@ -267,6 +262,27 @@ CRITICAL RULES:
                 toolResponse: { functionResponses: responses }
             }));
         }
+    }
+
+    reportTaskComplete(taskName) {
+        if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) {
+            console.warn('[VOICE] Cannot report task complete - Gemini not connected');
+            return;
+        }
+
+        console.log(`[VOICE] Reporting completion of task: ${taskName}`);
+        
+        // Send a system-initiated turn to Gemini Live
+        const completionNotice = {
+            clientContent: {
+                turns: [{
+                    role: "user",
+                    parts: [{ text: `[SYSTEM NOTIFICATION] The task "${taskName}" has been completed successfully. Please inform the user concisely.` }]
+                }],
+                turnComplete: true
+            }
+        };
+        this.geminiWs.send(JSON.stringify(completionNotice));
     }
 
     handleClientAudio(base64Audio) {

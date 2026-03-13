@@ -1980,19 +1980,57 @@ class NexusVoice {
             }
             console.log('[VOICE] AudioContext state:', this.ctx.state);
 
-            showToast('Requesting Mic Access...', 'info');
-            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log('[VOICE] Mic stream obtained');
+            showToast('Requesting Mic Access (Bypass Mode)...', 'info');
+            // FIX: Disabling echoCancellation and noiseSuppression on Android/Pixel 
+            // shifts the audio from "Voice Communication" to "Generic Mic" path, 
+            // which allows sharing the mic with screen recorders.
+            this.stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                } 
+            });
+            console.log('[VOICE] Mic stream obtained (Bypass Active)');
+            
+            // Monitor for OS mic theft (Stall Watcher)
+            const audioTrack = this.stream.getAudioTracks()[0];
+            audioTrack.onmute = () => {
+                showToast('Mic Stalled - Check Recorder', 'error');
+                console.warn('[VOICE] Mic track muted by OS');
+            };
+
             showToast('Mic Active', 'success');
             const source = this.ctx.createMediaStreamSource(this.stream);
             
             // ScriptProcessorNode for wide compatibility
             this.processor = this.ctx.createScriptProcessor(2048, 1, 1);
             
+            let silenceCount = 0;
             this.processor.onaudioprocess = (e) => {
                 if (!this.isActive || !this.isReady) return;
                 const inputData = e.inputBuffer.getChannelData(0);
                 
+                // Stall Watcher: Check for "Dead Air" (perfect zeros)
+                let isSilent = true;
+                for (let j = 0; j < inputData.length; j++) {
+                    if (inputData[j] !== 0) {
+                        isSilent = false;
+                        break;
+                    }
+                }
+
+                if (isSilent) {
+                    silenceCount++;
+                    // If we get ~2 seconds of pure zeros while active, warn the user
+                    if (silenceCount > 50) { 
+                        showToast('Mic Stalled - Check Recorder', 'error');
+                        silenceCount = -500; // Reset and wait before shouting again
+                    }
+                } else {
+                    silenceCount = 0;
+                }
+
                 // Adaptive Downsampling to 16kHz for Gemini
                 const targetRate = 16000;
                 const ratio = this.ctx.sampleRate / targetRate;

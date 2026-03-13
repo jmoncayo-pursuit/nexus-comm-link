@@ -70,7 +70,7 @@ async function main() {
 
     // 4. Routes & Statics
     app.use(express.static(join(__dirname, 'public')));
-    app.use('/', createRoutes(bridge, APP_PASSWORD, AUTH_TOKEN, AUTH_COOKIE_NAME));
+    app.use('/', createRoutes(bridge, voiceService, APP_PASSWORD, AUTH_TOKEN, AUTH_COOKIE_NAME));
 
     // 5. WebSocket Handlers
     wss.on('connection', (ws, req) => {
