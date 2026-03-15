@@ -12,8 +12,10 @@ export class BridgeService {
         this.isConnecting = false;
         this.pollInterval = 1500;
         this.lastErrorLog = 0;
+        this.lastSuccessLog = 0;
         this.lastApiState = false;
         this.lastCdpState = false;
+        this.nexusApiPort = process.env.NEXUS_API_PORT || 8000;
     }
 
     async initCDP() {
@@ -42,7 +44,7 @@ export class BridgeService {
         const poll = async () => {
             // 1. Monitor Base Status (API + CDP)
             try {
-                const apiAlive = await isPortOpen(8000);
+                const apiAlive = await isPortOpen(this.nexusApiPort);
                 const cdpAlive = !!(this.cdpConnection && this.cdpConnection.readyState === WebSocket.OPEN);
 
                 if (apiAlive !== this.lastApiState || cdpAlive !== this.lastCdpState) {
@@ -50,7 +52,9 @@ export class BridgeService {
                     this.lastCdpState = cdpAlive;
                     this.broadcastStatus();
                 }
-            } catch (e) { }
+            } catch (e) { 
+                // Port check failed (usually means it's closed)
+            }
 
             // 2. Handle Reconnection
             if (!this.cdpConnection) {

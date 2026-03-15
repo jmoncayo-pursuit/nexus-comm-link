@@ -20,6 +20,7 @@ const __dirname = dirname(__filename);
 
 const SERVER_PORT = process.env.PORT || 3131;
 const APP_PASSWORD = process.env.APP_PASSWORD || 'nexus';
+const COOKIE_SECRET = process.env.APP_SECRET || 'nexus_secret_key_v2';
 const AUTH_COOKIE_NAME = 'nexus_auth_token';
 const AUTH_TOKEN = hashString(APP_PASSWORD + 'nexus_salt_v2');
 
@@ -45,7 +46,7 @@ async function main() {
 
     app.use(compression());
     app.use(express.json({ limit: '50mb' }));
-    app.use(cookieParser('nexus_secret_key_v2'));
+    app.use(cookieParser(COOKIE_SECRET));
 
     // 3. Security & Auth Middleware
     app.use((req, res, next) => {
@@ -57,8 +58,8 @@ async function main() {
         }
 
         // Magic Link
-        if (req.query.key === APP_PASSWORD) {
-            res.cookie(AUTH_COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, signed: true, maxAge: 30 * 24 * 60 * 60 * 1000 });
+        if (req.query.key === APP_PASSWORD && APP_PASSWORD !== 'nexus') {
+            res.cookie(AUTH_COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, signed: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax' });
             return res.redirect('/');
         }
 
@@ -84,7 +85,7 @@ async function main() {
         if (!isLocalRequest(req)) {
             const rawCookies = req.headers.cookie || '';
             const token = rawCookies.split(';').find(c => c.trim().startsWith(AUTH_COOKIE_NAME))?.split('=')[1];
-            const decoded = token ? cookieParser.signedCookie(decodeURIComponent(token), 'nexus_secret_key_v2') : null;
+            const decoded = token ? cookieParser.signedCookie(decodeURIComponent(token), COOKIE_SECRET) : null;
             if (decoded !== AUTH_TOKEN) {
                 console.log(`📡 WebSocket auth failed for ${ip} (remote access requires login)`);
                 ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));

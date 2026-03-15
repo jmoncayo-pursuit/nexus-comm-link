@@ -1,13 +1,14 @@
-// Helper: Evaluate expression across CDP contexts with proper fallback
 async function cdpEval(cdp, expression, opts = {}) {
     const contexts = cdp.contexts || [{ id: undefined }];
     for (const ctx of contexts) {
         try {
             const params = { expression, returnByValue: true, ...opts };
             if (ctx.id !== undefined) params.contextId = ctx.id;
-            else delete params.contextId; // Ensure undefined doesn't leak
+            else delete params.contextId;
             const res = await cdp.call("Runtime.evaluate", params);
-            if (res.result?.value) return res.result.value;
+            if (res.result && Object.prototype.hasOwnProperty.call(res.result, 'value')) {
+                return res.result.value;
+            }
             if (res.exceptionDetails) continue;
         } catch (e) { }
     }
@@ -98,7 +99,6 @@ export async function captureSnapshot(cdp) {
                 } catch(e) {}
             }
 
-            // NEW: Aggressively remove blinking cursors and empty decorations that cause "twitching"
             clone.querySelectorAll('[class*="cursor"], [class*="cursor-container"], [style*="visibility: hidden"], .decorationsOverviewRuler').forEach(el => el.remove());
 
             clone.querySelectorAll('img, svg, i, span[class*="icon"], span[class*="codicon"]').forEach(el => {
@@ -162,7 +162,6 @@ export async function captureSnapshot(cdp) {
                 term.style.cssText = 'display:block; background:#000; overflow:hidden; margin:12px 0; width:100%; box-sizing:border-box; position:relative !important;';
             });
 
-            // Metadata sweeping
             clone.querySelectorAll('button, div, span, p').forEach(el => {
                 const txt = (el.innerText || '').trim().toLowerCase();
                 if (txt === 'always run' || txt.includes('exit code') || (txt.includes('copy') && txt.length < 15)) {
@@ -205,16 +204,13 @@ export async function captureSnapshot(cdp) {
             });
         } catch (globalErr) { }
 
-        // === REMOTE ACTION RELAY: Mark actionable buttons for mobile ===
         try {
             clone.querySelectorAll('button, [role="button"], div[class*="btn"], span[class*="btn"]').forEach((btn, idx) => {
                 const txt = (btn.textContent || '').trim();
-                // Match Apply, Accept, Reject and their variants
                 if (/^(Apply|Accept|Reject|Accept All|Reject All|Apply All|Apply Changes|Accept Changes|Reject Changes|Run|Approve)$/i.test(txt) ||
                     (txt.length < 40 && /\b(Apply|Accept|Reject)\b/i.test(txt) && !txt.includes('cookie') && !txt.includes('privacy'))) {
                     btn.setAttribute('data-nexus-action', txt);
                     btn.setAttribute('data-nexus-action-idx', String(idx));
-                    // Preserve original classes but add our marker
                     const existingClass = btn.getAttribute('class') || '';
                     btn.setAttribute('class', existingClass + ' nexus-action-relay');
                 }
@@ -245,33 +241,14 @@ export async function captureSnapshot(cdp) {
         };
     })()`;
 
-    let firstError = null;
-    const contexts = cdp.contexts || [{ id: undefined }];
-    for (const ctx of contexts) {
-        try {
-            const evalParams = {
-                expression: CAPTURE_SCRIPT,
-                returnByValue: true
-            };
-            if (ctx.id !== undefined) evalParams.contextId = ctx.id;
-
-            const result = await cdp.call("Runtime.evaluate", evalParams);
-            if (result.exceptionDetails) continue;
-            if (result.result && result.result.value) {
-                const val = result.result.value;
-                if (val.error) {
-                    firstError = firstError || val;
-                } else {
-                    const rewrite = (str) => str.replace(/url\(['"]?(vscode-(?:file|webview-resource|remote|resource|vfs):\/\/[^'"]+)['"]?\)/gi, (m, url) => `url('/local-img?path=${encodeURIComponent(url)}')`)
-                        .replace(/src=['"](vscode-(?:file|webview-resource|remote|resource|vfs):\/\/[^'"]+)['"]/gi, (m, url) => `src="/local-img?path=${encodeURIComponent(url)}"`);
-                    if (val.css) val.css = rewrite(val.css);
-                    if (val.html) val.html = rewrite(val.html);
-                    return val;
-                }
-            }
-        } catch (e) { }
+    const val = await cdpEval(cdp, CAPTURE_SCRIPT);
+    if (val && !val.error) {
+        const rewrite = (str) => str.replace(/url\(['"]?(vscode-(?:file|webview-resource|remote|resource|vfs):\/\/[^'"]+)['"]?\)/gi, (m, url) => `url('/local-img?path=${encodeURIComponent(url)}')`)
+            .replace(/src=['"](vscode-(?:file|webview-resource|remote|resource|vfs):\/\/[^'"]+)['"]/gi, (m, url) => `src="/local-img?path=${encodeURIComponent(url)}"`);
+        if (val.css) val.css = rewrite(val.css);
+        if (val.html) val.html = rewrite(val.html);
     }
-    return firstError;
+    return val;
 }
 
 /**
@@ -406,9 +383,7 @@ export async function setMode(cdp, mode) {
         } catch(err) { return { error: err.toString() }; }
     })()`;
 
-    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
-    return res || { error: 'Context failed' };
-    return { error: 'Context failed' };
+    return await cdpEval(cdp, EXP, { awaitPromise: true }) || { error: 'Context failed' };
 }
 
 export async function stopGeneration(cdp) {
@@ -563,9 +538,7 @@ export async function setModel(cdp, modelName) {
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
-    const res = await cdpEval(cdp, EXP, { awaitPromise: true });
-    return res || { error: 'Context failed' };
-    return { error: 'Context failed' };
+    return await cdpEval(cdp, EXP, { awaitPromise: true }) || { error: 'Context failed' };
 }
 
 export async function startNewChat(cdp) {
@@ -669,7 +642,6 @@ export async function getAppState(cdp) {
             let model = 'Unknown';
             const modelKeywords = ['Gemini', 'Claude', 'GPT', 'Sonnet', 'o1', 'o3', 'gpt-4', 'Llama', 'DeepSeek'];
             
-            // Priority 1: Check elements that look like a model selector button
             const candidateSelectors = [
                 '[data-tooltip-id*="model"]',
                 'button[aria-haspopup]',
@@ -704,16 +676,7 @@ export async function getAppState(cdp) {
         } catch(e) { return { mode: 'Unknown', model: 'Unknown' }; }
     })()`;
 
-    const contexts = cdp.contexts || [{ id: undefined }];
-    for (const ctx of contexts) {
-        try {
-            const evalParams = { expression: EXP, returnByValue: true };
-            if (ctx.id !== undefined) evalParams.contextId = ctx.id;
-            const res = await cdp.call("Runtime.evaluate", evalParams);
-            if (res.result?.value) return res.result.value;
-        } catch (e) { }
-    }
-    return { mode: 'Unknown', model: 'Unknown' };
+    return await cdpEval(cdp, EXP) || { mode: 'Unknown', model: 'Unknown' };
 }
 
 export async function triggerUndo(cdp) {
@@ -743,9 +706,10 @@ export async function triggerUndo(cdp) {
 
     // 2. Fallback: Dispatch Cmd+Z (Mac) or Ctrl+Z (Linux/Win)
     try {
+        const isMac = process.platform === 'darwin';
         await cdp.call("Input.dispatchKeyEvent", {
             type: "keyDown",
-            modifiers: 8, // Command
+            modifiers: isMac ? 4 : 2, // Cmd (4) on Mac, Ctrl (2) on others
             windowsVirtualKeyCode: 90, // 'Z'
             nativeVirtualKeyCode: 90,
             key: "z",
@@ -753,13 +717,13 @@ export async function triggerUndo(cdp) {
         });
         await cdp.call("Input.dispatchKeyEvent", {
             type: "keyUp",
-            modifiers: 8,
+            modifiers: isMac ? 4 : 2,
             windowsVirtualKeyCode: 90,
             nativeVirtualKeyCode: 90,
             key: "z",
             code: "KeyZ"
         });
-        return { success: true, method: 'keyboard_shortcut', note: 'Dispatched Cmd+Z' };
+        return { success: true, method: 'keyboard_shortcut', note: isMac ? 'Dispatched Cmd+Z' : 'Dispatched Ctrl+Z' };
     } catch (e) {
         return { error: 'Keyboard undo failed: ' + e.message };
     }
