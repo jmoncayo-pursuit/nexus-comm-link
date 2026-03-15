@@ -1,7 +1,7 @@
 import http from 'http';
 import WebSocket from 'ws';
 
-const PORTS = [9000, 56991, 9001, 9002, 9003];
+const PORTS = [9000, 9222, 56991, 9001, 9002, 9003];
 
 // Helper: HTTP GET JSON
 export function getJson(url) {
@@ -34,11 +34,12 @@ export async function discoverCDP() {
         throw new Error(`CDP not found. No debug ports responding (${PORTS.join(', ')})`);
     }
 
-    // Priority 1: Main Workbench (Chat DOM) - Search all ports first
+    // Priority 1: Main Workbench (Chat DOM) - Search all ports
     for (const { port, list } of listResults) {
         const workbench = list.find(t =>
             t.type === 'page' &&
-            t.url?.includes('workbench.html') &&
+            (t.url?.includes('workbench.html') || t.url?.includes('index.html') || t.title?.includes('Antigravity')) &&
+            !t.title?.includes('generator.py') &&
             !t.url?.includes('jetski')
         );
         if (workbench && workbench.webSocketDebuggerUrl) {
@@ -47,7 +48,17 @@ export async function discoverCDP() {
         }
     }
 
-    // Priority 2: Jetski/Launchpad - Search all ports next
+    // Priority 2: 9000 is our Manual Launch Port - If we launched it, we likely want it
+    const port9000 = listResults.find(r => r.port === 9000);
+    if (port9000) {
+        const generic9000 = port9000.list.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
+        if (generic9000) {
+            console.log(`🎯 [Port 9000] Found manual launch target:`, generic9000.title);
+            return { port: 9000, url: generic9000.webSocketDebuggerUrl };
+        }
+    }
+
+    // Priority 3: Jetski/Launchpad
     for (const { port, list } of listResults) {
         const jetski = list.find(t => t.url?.includes('jetski') || t.title === 'Launchpad');
         if (jetski && jetski.webSocketDebuggerUrl) {
@@ -56,12 +67,15 @@ export async function discoverCDP() {
         }
     }
 
-    // Priority 3: Any non-viewer page
+    // Priority 4: Any non-viewer page (with browser exclusion)
     for (const { port, list } of listResults) {
         const generic = list.find(t =>
             t.type === 'page' &&
             t.webSocketDebuggerUrl &&
-            !t.url?.includes('localhost:5173') // Avoid connecting back to the viewer UI itself
+            !t.url?.includes('localhost:5173') &&
+            !t.title?.toLowerCase().includes('search') &&
+            !t.title?.toLowerCase().includes('google') &&
+            !t.url?.includes('github.com')
         );
         if (generic) {
             console.log(`⚠️ [Port ${port}] Found generic page target:`, generic.title);
@@ -78,7 +92,8 @@ export async function connectCDP(url) {
         const ws = new WebSocket(url);
         let id = 0;
         const pendingCalls = new Map();
-        ws.contexts = []; // Initialize contexts array
+        ws.contexts = [];
+        ws.consoleMessages = [];
 
         ws.on('open', async () => {
             console.log('✅ Connected to Nexus CDP');
@@ -123,6 +138,12 @@ export async function connectCDP(url) {
                 ws.contexts = [{ id: undefined }]; // Fallback to default
             }
 
+            try {
+                await ws.call('Console.enable', {});
+            } catch (e) {
+                console.warn('⚠️  Console.enable failed:', e.message);
+            }
+
             resolve(ws);
         });
 
@@ -135,6 +156,14 @@ export async function connectCDP(url) {
                     pendingCalls.delete(response.id);
                     if (response.error) rej(response.error);
                     else res(response.result);
+                } else if (!response.id && response.method === 'Console.messageAdded') {
+                    const entry = response.params?.message;
+                    if (entry) {
+                        const text = entry.text || entry.args?.map(a => a.value ?? a.description ?? '').join(' ') || '';
+                        const level = entry.level || 'log';
+                        ws.consoleMessages.push({ level, text });
+                        if (ws.consoleMessages.length > 50) ws.consoleMessages.shift();
+                    }
                 }
             } catch (e) { /* Notification or malformed */ }
         });

@@ -41,7 +41,7 @@ let idleTimer = null;
 let lastHash = '';
 let currentMode = 'Fast';
 let chatIsOpen = true; // Track if a chat is currently open
-
+let last1008ToastAt = 0;
 
 // --- Auth Utilities ---
 async function fetchWithAuth(url, options = {}) {
@@ -140,7 +140,7 @@ const MODELS = [
     "GPT-OSS 120B (Medium)"
 ];
 
-// --- WebSocket ---
+let snapshotDebounce = null;
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -151,6 +151,13 @@ function connectWebSocket() {
         loadSnapshot();
     };
 
+    ws.onerror = (err) => {
+        console.error('WS Error:', err);
+        if (window.location.protocol === 'https:') {
+            console.warn('⚠️ WebSocket failed on HTTPS. This is likely a certificate trust issue in Firefox/DuckDuckGo.');
+        }
+    };
+
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'error' && data.message === 'Unauthorized') {
@@ -158,7 +165,8 @@ function connectWebSocket() {
             return;
         }
         if (data.type === 'snapshot_update' && autoRefreshEnabled) {
-            loadSnapshot();
+            if (snapshotDebounce) clearTimeout(snapshotDebounce);
+            snapshotDebounce = setTimeout(() => loadSnapshot(), 30);
         }
         if (data.type === 'status_update') {
             updateBootServerStatus(data.cdpConnected, data.apiConnected);
@@ -169,15 +177,41 @@ function connectWebSocket() {
             }
         }
         if (data.type === 'voice_audio') {
-            if (window.nexusVoice) window.nexusVoice.playAudio(data.data);
+            if (window.nexusVoice) {
+                if (Date.now() < (window.nexusVoice.suppressModelAudioUntil || 0)) return;
+                window.nexusVoice.playAudio(data.data);
+            }
         }
         if (data.type === 'voice_transcript') {
             if (window.nexusVoice) window.nexusVoice.updateTranscript(data.text);
         }
+        if (data.type === 'voice_error') {
+            if (window.nexusVoice) window.nexusVoice.showError(data.message);
+        }
+        if (data.type === 'voice_interrupt') {
+            const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
+            if (window.nexusVoice && sessionDuration > 2000) {
+                window.nexusVoice.interrupt();
+            }
+        }
+        if (data.type === 'voice_tool_confirm') {
+            if (window.nexusVoice) {
+                window.nexusVoice.interrupt();
+            }
+        }
     };
 
-    ws.onclose = () => {
-        console.log('WS Disconnected');
+    ws.onclose = (event) => {
+        const { code, reason } = event;
+        console.log('WS Disconnected', code ? `(code=${code}, reason=${reason || 'none'})` : '');
+        if (code === 1008) {
+            console.warn('⚠️ WebSocket 1008 (Policy violation). Possible causes: auth cookie missing on remote, voice audio too large, or proxy/ngrok limits.');
+            const now = Date.now();
+            if (typeof showToast === 'function' && now - last1008ToastAt > 15000) {
+                last1008ToastAt = now;
+                showToast('Session rejected (1008). Log in again for remote access.', 'error');
+            }
+        }
         updateStatus(false, false);
         setTimeout(connectWebSocket, 2000);
     };
@@ -223,8 +257,8 @@ async function loadSnapshot(force = false) {
                                     <line x1="12" y1="17" x2="12.01" y2="17"></line>
                                 </svg>
                                 <h2>Waiting for IDE</h2>
-                                <p>Launch your editor with debug mode enabled:<br><code style="color:var(--accent); font-size:12px;">nexus . --remote-debugging-port=9000</code></p>
-                                <p style="font-size:11px; opacity:0.5;">Or double-click launch_nexus_debug.command</p>
+                                <p>Launch with remote debugging (from project folder):<br><code style="color:var(--accent); font-size:11px;">/Applications/Antigravity.app/Contents/MacOS/Electron . --remote-debugging-port=9000</code></p>
+                                <p style="font-size:11px; opacity:0.5;">Or launch_nexus_debug.command</p>
                             </div>
                         `;
                     } else {
@@ -543,18 +577,13 @@ async function loadSnapshot(force = false) {
             .replace(/\s+/g, ' ');
 
         if (cleanedForCompare !== lastHtmlHash) {
-            // Stabilize height before update to prevent "twitching"
-            const currentHeight = chatContent.offsetHeight;
-            chatContent.style.minHeight = currentHeight + 'px';
-            
             chatContent.innerHTML = data.html;
             lastHtmlHash = cleanedForCompare;
             
-            // Clear min-height after a brief delay to allow natural resizing
+            // Re-inject highlights and buttons after a brief pause for layout
             requestAnimationFrame(() => {
-                setTimeout(() => {
-                    chatContent.style.minHeight = '0px';
-                }, 100);
+                addMobileCopyButtons();
+                injectActionButtons();
             });
         }
 
@@ -1056,11 +1085,13 @@ messageInput.addEventListener('input', function () {
 // --- Scroll Sync to Desktop ---
 let scrollSyncTimeout = null;
 let lastScrollSync = 0;
-const SCROLL_SYNC_DEBOUNCE = 800; // ms between scroll syncs (longer to prevent fighting user)
+const SCROLL_SYNC_DEBOUNCE = 300;
 let snapshotReloadPending = false;
 
 async function syncScrollToDesktop() {
-    const scrollPercent = chatContainer.scrollTop / (chatContainer.scrollHeight - chatContainer.clientHeight);
+    const maxScroll = chatContainer.scrollHeight - chatContainer.clientHeight;
+    if (maxScroll <= 0) return;
+    const scrollPercent = chatContainer.scrollTop / maxScroll;
     try {
         await fetchWithAuth('/remote-scroll', {
             method: 'POST',
@@ -1176,14 +1207,12 @@ chatContainer.addEventListener('scroll', () => {
         scrollSyncTimeout = setTimeout(syncScrollToDesktop, 100);
     }
 
-    idleTimer = setTimeout(() => {
+    idleTimer = setTimeout(async () => {
         userIsScrolling = false;
         autoRefreshEnabled = true;
-
-        // User stopped scrolling. Always fetch a fresh snapshot now to ensure 
-        // any older messages the desktop just loaded are injected into the phone immediately.
+        await syncScrollToDesktop();
         loadSnapshot();
-    }, 800);
+    }, 400);
 });
 
 scrollToBottomBtn.addEventListener('click', () => {
@@ -1958,12 +1987,12 @@ class NexusVoice {
         this.isReady = false;
         this.nextPlayTime = 0; // For scheduled queue
         this.liveBtn = document.getElementById('liveBtn');
-        
-        // No separate stop button, the live button toggles.
+        this.activeSources = [];
     }
 
     async start() {
         if (this.isActive) return;
+        window.voiceSessionStart = Date.now();
         this.nextPlayTime = 0;
         console.log('[VOICE] Starting voice session...');
         if (this.liveBtn) this.liveBtn.classList.add('active');
@@ -1993,53 +2022,39 @@ class NexusVoice {
             });
             console.log('[VOICE] Mic stream obtained (Bypass Active)');
             
-            // Monitor for OS mic theft (Stall Watcher)
-            const audioTrack = this.stream.getAudioTracks()[0];
-            audioTrack.onmute = () => {
-                showToast('Mic Stalled - Check Recorder', 'error');
-                console.warn('[VOICE] Mic track muted by OS');
-            };
-
             showToast('Mic Active', 'success');
             const source = this.ctx.createMediaStreamSource(this.stream);
             
             // ScriptProcessorNode for wide compatibility
             this.processor = this.ctx.createScriptProcessor(2048, 1, 1);
             
-            let silenceCount = 0;
             this.processor.onaudioprocess = (e) => {
                 if (!this.isActive || !this.isReady) return;
+
+                // Mute during greeting playback to prevent echo/self-interrupt
+                const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
+                if (sessionDuration < 3500 || this.activeSources.length > 0) return;
+                
                 const inputData = e.inputBuffer.getChannelData(0);
                 
-                // Stall Watcher: Check for "Dead Air" (perfect zeros)
-                let isSilent = true;
-                for (let j = 0; j < inputData.length; j++) {
-                    if (inputData[j] !== 0) {
-                        isSilent = false;
-                        break;
-                    }
-                }
 
-                if (isSilent) {
-                    silenceCount++;
-                    // If we get ~2 seconds of pure zeros while active, warn the user
-                    if (silenceCount > 50) { 
-                        showToast('Mic Stalled - Check Recorder', 'error');
-                        silenceCount = -500; // Reset and wait before shouting again
-                    }
-                } else {
-                    silenceCount = 0;
-                }
-
-                // Adaptive Downsampling to 16kHz for Gemini
+                // Adaptive Downsampling to 16kHz for Gemini with Linear Interpolation
                 const targetRate = 16000;
                 const ratio = this.ctx.sampleRate / targetRate;
                 const newLength = Math.floor(inputData.length / ratio);
                 const pcmData = new Int16Array(newLength);
                 
                 for (let i = 0; i < newLength; i++) {
-                    const sampleIdx = Math.floor(i * ratio);
-                    const s = Math.max(-1, Math.min(1, inputData[sampleIdx]));
+                    const pos = i * ratio;
+                    const idx = Math.floor(pos);
+                    const fract = pos - idx;
+                    let s;
+                    if (idx + 1 < inputData.length) {
+                        s = inputData[idx] * (1 - fract) + inputData[idx + 1] * fract;
+                    } else {
+                        s = inputData[idx];
+                    }
+                    s = Math.max(-1, Math.min(1, s));
                     pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                 }
                 
@@ -2060,7 +2075,6 @@ class NexusVoice {
             }
             
             if (ws && ws.readyState === WebSocket.OPEN) {
-                showToast('Signing into Gemini...', 'info');
                 ws.send(JSON.stringify({ type: 'voice_start' }));
             } else {
                 console.error('[VOICE] WebSocket not open, state:', ws ? ws.readyState : 'null');
@@ -2077,19 +2091,22 @@ class NexusVoice {
     }
 
     stop() {
-        if (!this.isActive) return;
-        this.isActive = false;
         this.isReady = false;
         if (this.liveBtn) this.liveBtn.classList.remove('active');
         if (this.overlay) this.overlay.classList.remove('active');
-        
-        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-        if (this.processor) this.processor.disconnect();
-        if (this.ctx) this.ctx.close();
-        
-        this.stream = null;
-        this.processor = null;
-        this.ctx = null;
+
+        if (this.stream) {
+            this.stream.getTracks().forEach(t => t.stop());
+            this.stream = null;
+        }
+        if (this.processor) {
+            this.processor.disconnect();
+            this.processor = null;
+        }
+        if (this.ctx) {
+            this.ctx.close();
+            this.ctx = null;
+        }
 
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'voice_stop' }));
@@ -2141,6 +2158,12 @@ class NexusVoice {
             const now = this.ctx.currentTime;
             const startTime = Math.max(now, this.nextPlayTime);
             
+            source.onended = () => {
+                const idx = this.activeSources.indexOf(source);
+                if (idx > -1) this.activeSources.splice(idx, 1);
+            };
+            this.activeSources.push(source);
+            
             source.start(startTime);
             this.nextPlayTime = startTime + buffer.duration;
             
@@ -2152,6 +2175,24 @@ class NexusVoice {
     updateTranscript(text) {
         if (!this.isActive || !this.transcriptEl) return;
         this.transcriptEl.textContent = text;
+    }
+
+    showError(msg) {
+        if (this.transcriptEl) {
+            this.transcriptEl.textContent = msg;
+            this.transcriptEl.style.color = '#ef4444';
+        }
+        showToast(msg, 'error');
+    }
+
+    interrupt() {
+        console.log('[VOICE] Interrupting playback');
+        this.nextPlayTime = this.ctx ? this.ctx.currentTime : 0;
+        this.activeSources.forEach(s => {
+            try { s.stop(); } catch(e) {}
+        });
+        this.activeSources = [];
+        if (this.transcriptEl) this.transcriptEl.textContent = "Adjusting...";
     }
 
     setReady() {
@@ -2174,7 +2215,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const liveBtn = document.getElementById('liveBtn');
     if (liveBtn) {
-        liveBtn.addEventListener('click', toggleLiveVoice);
+        let lastLiveTap = 0;
+        const handleLiveTap = (e) => {
+            if (e.type === 'touchend') e.preventDefault();
+            const now = Date.now();
+            if (now - lastLiveTap < 400) return;
+            lastLiveTap = now;
+            toggleLiveVoice();
+        };
+        liveBtn.addEventListener('click', handleLiveTap);
+        liveBtn.addEventListener('touchend', handleLiveTap, { passive: false });
     }
 });
 

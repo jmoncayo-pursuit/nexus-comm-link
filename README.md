@@ -26,12 +26,13 @@
 ### 1. Enable Desktop Debugging
 Start your environment with the remote debugging port enabled.
 
-**Command Line:**
+**macOS (Antigravity):**
 ```bash
-nexus . --remote-debugging-port=9000
+/Applications/Antigravity.app/Contents/MacOS/Electron . --remote-debugging-port=9000
 ```
+(Run from your project folder, or use `launch_nexus_debug.command` if you have one.)
 
-**Context Menu (Linux/Windows):**
+**Context Menu (Linux):**
 Run the installer script to add "Open with Nexus (Debug)" to your file manager's right-click menu:
 - Windows: `install_context_menu.bat`
 - Linux: `./install_context_menu.sh`

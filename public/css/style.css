@@ -54,7 +54,9 @@ input[type="file"]:not(#imageUploadBtn),
     display: flex;
     align-items: center;
     gap: 12px;
-    pointer-events: none;
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .nexus-toast.show {
@@ -490,12 +492,14 @@ body {
 /* Chat Container */
 .chat-container {
     flex: 1;
+    min-height: 0; /* Required for flex child to scroll */
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
     background: var(--bg-app);
     overflow-anchor: auto; /* Prevent jitter during generation */
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .chat-content {
@@ -1245,6 +1249,8 @@ textarea::-webkit-scrollbar {
     color: var(--accent);
     width: 48px; 
     height: 48px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -1432,6 +1438,8 @@ textarea::-webkit-scrollbar {
     overflow: hidden;
     text-overflow: ellipsis;
     opacity: 0.9;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .voice-live-indicator {

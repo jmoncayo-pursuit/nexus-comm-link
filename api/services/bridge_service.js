@@ -81,16 +81,22 @@ export class BridgeService {
                             .replace(/>\s+</g, '><') // Normalize whitespace between tags
                             .trim();
 
+                        // Skip server log view (feedback loop) but keep polling
+                        if (snapshot.title?.includes('server.log')) {
+                            setTimeout(poll, 2000);
+                            return;
+                        }
+
                         const hash = hashString(htmlForHash);
                         if (hash !== this.lastSnapshotHash) {
                             this.lastSnapshot = snapshot;
                             this.lastSnapshotHash = hash;
+                            // snapshot updated (broadcast sent; no log to reduce noise)
                             this.broadcast({ type: 'snapshot_update' });
-                            console.log(`📸 Snapshot updated (hash: ${hash})`);
                         }
                     } else {
                         const now = Date.now();
-                        if (now - this.lastErrorLog > 10000) {
+                        if (now - this.lastErrorLog > 30000) { // Reduced error noise
                             console.warn(`⚠️  Snapshot capture issue: ${snapshot?.error || 'No valid snapshot'}`);
                             this.lastErrorLog = now;
                         }
@@ -102,7 +108,7 @@ export class BridgeService {
                     this.cdpConnection = null;
                 }
             }
-            setTimeout(poll, this.pollInterval);
+            setTimeout(poll, 2000); // Relaxed frequency to 2s
         };
         poll();
     }

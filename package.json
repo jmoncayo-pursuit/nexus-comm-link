@@ -5,7 +5,11 @@
     "description": "A high-performance mobile bridge for real-time monitoring and remote control of desktop development sessions.",
     "scripts": {
         "start": "node server.js",
-        "dev": "node server.js"
+        "dev": "node server.js",
+        "dev:watch": "nodemon server.js --ext js,json"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.9"
     },
     "dependencies": {
         "compression": "^1.8.1",

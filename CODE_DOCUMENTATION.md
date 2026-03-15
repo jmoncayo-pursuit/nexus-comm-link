@@ -144,7 +144,7 @@ The server automatically detects SSL certificates and enables HTTPS:
 ### Required Startup Sequence:
 
 1. **Start Nexus in Debug Mode**
-   - Launch Nexus with: `nexus . --remote-debugging-port=9000`
+   - Launch with: `/Applications/Antigravity.app/Contents/MacOS/Electron . --remote-debugging-port=9000` (macOS)
    - Or use the context menu: Right-click folder → "Open with Nexus (Debug)"
 
 2. **Open or Start a Chat**

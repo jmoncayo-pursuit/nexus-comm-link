@@ -65,30 +65,24 @@ export function killPortProcess(port) {
     }
 }
 
-// Get local IP address for mobile access
-export function getLocalIP() {
+// Get all local IP addresses for mobile access
+export function getAllLocalIPs() {
     const interfaces = os.networkInterfaces();
-    const candidates = [];
+    const ips = [];
 
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
-            // Skip internal and non-IPv4 addresses
             if (iface.family === 'IPv4' && !iface.internal) {
-                candidates.push({
-                    address: iface.address,
-                    name: name,
-                    // Prioritize common home/office network ranges
-                    priority: iface.address.startsWith('192.168.') ? 1 :
-                        iface.address.startsWith('10.') ? 2 :
-                            iface.address.startsWith('172.') ? 3 : 4
-                });
+                ips.push(iface.address);
             }
         }
     }
+    return ips;
+}
 
-    // Sort by priority and return the best one
-    candidates.sort((a, b) => a.priority - b.priority);
-    return candidates.length > 0 ? candidates[0].address : 'localhost';
+export function getLocalIP() {
+    const candidates = getAllLocalIPs();
+    return candidates.length > 0 ? candidates[0] : 'localhost';
 }
 
 // Simple hash function
@@ -105,26 +99,20 @@ export function hashString(str) {
 
 // Check if a request is from the same Wi-Fi (internal network)
 export function isLocalRequest(req) {
-    const ip = req.ip || req.connection.remoteAddress || '';
+    const ip = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
 
     // IPv4 and IPv6 localhost
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
 
     // Private ranges: 
-    // 192.168.x.x
-    // 10.x.x.x
-    // 172.16.x.x to 172.31.x.x
     if (ip.startsWith('192.168.') || ip.startsWith('::ffff:192.168.')) return true;
     if (ip.startsWith('10.') || ip.startsWith('::ffff:10.')) return true;
 
     if (ip.startsWith('172.')) {
         const parts = ip.split('.');
-        const second = parseInt(parts[1], 10);
+        const second = parseInt(parts[parts.length - 3], 10);
         if (second >= 16 && second <= 31) return true;
     }
-
-    // IPv6 link-local
-    if (ip.startsWith('fe80:')) return true;
 
     return false;
 }

@@ -127,35 +127,26 @@ export async function captureSnapshot(cdp) {
                 }
             });
 
-            clone.querySelectorAll('.xterm, [class*="terminal"], [class*="console"], [class*="bg-gray-950"]').forEach(term => {
-                const innerText = (term.innerText || '');
+            clone.querySelectorAll('.xterm, [class*="terminal"], [class*="console"]').forEach(term => {
+                const innerText = (term.innerText || '').trim();
                 const looksLikeCommand = innerText.includes('Exit code') || innerText.includes('Output') || term.classList.contains('xterm');
-                if (!looksLikeCommand && term.tagName !== 'PRE') return;
+                if (!looksLikeCommand) return;
 
-                const rows = Array.from(term.querySelectorAll('div, span, pre, code'));
-                let terminalText = '';
-                if (rows.length > 5) {
-                    terminalText = rows
-                        .map(row => row.innerText.trim())
-                        .filter(t => t && !t.toLowerCase().includes('copy') && !t.toLowerCase().includes('always run') && t.length > 1)
-                        .join(String.fromCharCode(10));
-                } else {
-                    terminalText = term.innerText;
-                }
-                
-                terminalText = terminalText
-                    .replace(/Always run\s*v/g, '')
-                    .replace(/Exit code [0-9]+/g, '')
+                let terminalText = term.innerText
+                    .replace(/Always run/gi, '')
+                    .replace(/Exit code\s*[0-9]*/gi, '')
                     .replace(/Copy contents/gi, '')
                     .trim();
+
+                if (!terminalText || terminalText.length < 5) {
+                    term.remove();
+                    return;
+                }
 
                 term.innerHTML = '';
                 const header = document.createElement('div');
                 header.className = 'nexus-terminal-header';
-                const title = document.createElement('span');
-                title.style.cssText = 'font-family:Orbitron, sans-serif; font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-left: 12px;';
-                title.innerText = innerText.includes('Exit code') ? 'System Log' : 'Output';
-                header.appendChild(title);
+                header.innerHTML = '<span style="font-family:Orbitron, sans-serif; font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-left: 12px;">' + (innerText.includes('Exit code') ? 'System Log' : 'Output') + '</span>';
                 
                 const contextBtn = document.createElement('div');
                 contextBtn.className = 'nexus-terminal-context-btn';
@@ -166,15 +157,16 @@ export async function captureSnapshot(cdp) {
 
                 const pre = document.createElement('pre');
                 pre.style.cssText = 'color:#fff; background:#000; padding:16px; margin:0; font-family:"JetBrains Mono", monospace; font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-all; border:1px solid #334155; border-top:none; border-radius:0 0 6px 6px;';
-                pre.innerText = terminalText || 'Stream Offline...';
+                pre.innerText = terminalText;
                 term.appendChild(pre);
                 term.style.cssText = 'display:block; background:#000; overflow:hidden; margin:12px 0; width:100%; box-sizing:border-box; position:relative !important;';
             });
 
-            clone.querySelectorAll('button, div, span, a').forEach(el => {
-                const txt = (el.innerText || '').toLowerCase();
-                if (txt === 'always run' || txt === 'open' || (txt.includes('copy') && txt.length < 15) || txt.includes('exit code')) {
-                    el.remove();
+            // Metadata sweeping
+            clone.querySelectorAll('button, div, span, p').forEach(el => {
+                const txt = (el.innerText || '').trim().toLowerCase();
+                if (txt === 'always run' || txt.includes('exit code') || (txt.includes('copy') && txt.length < 15)) {
+                    if (!el.querySelector('pre, code, .nexus-terminal-header')) el.remove();
                 }
             });
 
@@ -282,30 +274,63 @@ export async function captureSnapshot(cdp) {
     return firstError;
 }
 
+export async function getConversationTranscript(cdp) {
+    const EXP = `(() => {
+        const root = document.getElementById('conversation') || document.getElementById('chat') || document.getElementById('cascade') ||
+            document.querySelector('[class*="conversation-area"]') || document.querySelector('[class*="chat-container"]');
+        if (!root) return { transcript: '', lastAssistant: '' };
+        const full = root.innerText.trim().slice(0, 8000);
+        let lastAssistant = '';
+        const assistantSel = '[class*="assistant"], [class*="model"], [class*="bot"], [data-role="assistant"], [class*="ai-message"]';
+        const blocks = root.querySelectorAll(assistantSel);
+        if (blocks.length) {
+            const last = blocks[blocks.length - 1];
+            lastAssistant = (last.innerText || '').trim().slice(0, 6000);
+        }
+        if (!lastAssistant) {
+            const parts = full.split(/\\n{2,}/);
+            if (parts.length >= 2) lastAssistant = parts[parts.length - 1].trim().slice(0, 6000);
+        }
+        return { transcript: full, lastAssistant };
+    })()`;
+    const res = await cdpEval(cdp, EXP);
+    return { transcript: res?.transcript ?? '', lastAssistant: res?.lastAssistant ?? '' };
+}
+
 export async function injectMessage(cdp, text) {
-    const safeText = JSON.stringify(text);
+    const safe = String(text ?? '');
+    const safeText = JSON.stringify(safe);
     const EXPRESSION = `(async () => {
         const cancel = document.querySelector('[data-tooltip-id="input-send-button-cancel-tooltip"]');
         if (cancel && cancel.offsetParent !== null) return { ok:false, reason:"busy" };
 
-        const editors = [...document.querySelectorAll('#conversation [contenteditable="true"], #chat [contenteditable="true"], #cascade [contenteditable="true"]')]
-            .filter(el => el.offsetParent !== null);
-        const editor = editors.at(-1);
+        const roots = ['#conversation','#chat','#cascade','[class*="conversation-area"]','[class*="chat-container"]'];
+        let editors = [];
+        for (const sel of roots) {
+            const root = typeof sel === 'string' && sel.startsWith('#') ? document.getElementById(sel.slice(1)) : document.querySelector(sel);
+            if (root) {
+                const list = root.querySelectorAll('[contenteditable="true"]');
+                list.forEach(el => { if (el.offsetParent !== null) editors.push(el); });
+            }
+        }
+        const editor = editors.length ? editors[editors.length - 1] : null;
         if (!editor) return { ok:false, error:"editor_not_found" };
 
         editor.focus();
         document.execCommand?.("selectAll", false, null);
         document.execCommand?.("delete", false, null);
 
+        const toInsert = ${safeText};
         let inserted = false;
-        try { inserted = !!document.execCommand?.("insertText", false, ${safeText}); } catch {}
+        try { inserted = !!document.execCommand?.("insertText", false, toInsert); } catch(e) {}
         if (!inserted) {
-            editor.textContent = ${safeText};
-            editor.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertText", data: ${safeText} }));
+            editor.textContent = toInsert;
+            editor.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertText", data: toInsert }));
         }
 
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const submit = document.querySelector("svg.lucide-arrow-right")?.closest("button");
+        const submit = document.querySelector("svg.lucide-arrow-right")?.closest("button") ||
+            document.querySelector("button[aria-label*='Send'], button[aria-label*='send']");
         if (submit && !submit.disabled) {
             submit.click();
             return { ok:true, method:"click_submit" };
@@ -444,20 +469,51 @@ export async function clickActionButton(cdp, actionText) {
     return res || { error: 'No CDP context available' };
 }
 
+export async function getScrollDebugInfo(cdp) {
+    const EXP = `(() => {
+        const root = document.getElementById('conversation') || document.getElementById('chat') || document.getElementById('cascade');
+        if (!root) return { error: 'No root' };
+        const inner = root.querySelector('.overflow-y-auto, [data-scroll-area], [class*="overflow-y-auto"]');
+        return {
+            rootId: root.id || root.className?.slice(0, 50),
+            rootScroll: { scrollTop: root.scrollTop, scrollHeight: root.scrollHeight, clientHeight: root.clientHeight },
+            innerFound: !!inner,
+            innerScroll: inner ? { scrollTop: inner.scrollTop, scrollHeight: inner.scrollHeight, clientHeight: inner.clientHeight } : null
+        };
+    })()`;
+    return await cdpEval(cdp, EXP);
+}
+
 export async function remoteScroll(cdp, { scrollTop, scrollPercent }) {
+    const sp = scrollPercent;
+    const st = scrollTop;
     const EXP = `(() => {
         try {
-            const chatArea = document.querySelector('#conversation .overflow-y-auto, #chat .overflow-y-auto, #cascade .overflow-y-auto, #conversation [data-scroll-area], #chat [data-scroll-area], #cascade [data-scroll-area]');
-            const target = chatArea || document.getElementById('conversation') || document.getElementById('chat') || document.getElementById('cascade');
-            if (!target) return { error: 'No scrollable element' };
-            if (${scrollPercent} !== undefined) target.scrollTop = (target.scrollHeight - target.clientHeight) * ${scrollPercent};
-            else target.scrollTop = ${scrollTop || 0};
+            const root = document.getElementById('conversation') || document.getElementById('chat') || document.getElementById('cascade') ||
+                document.querySelector('[class*="conversation-area"]') || document.querySelector('[class*="chat-container"]') ||
+                document.querySelector('main div[class*="flex-col"]');
+            if (!root) return { error: 'No chat container' };
+            let target = root.querySelector('.overflow-y-auto, [data-scroll-area], [class*="overflow-y-auto"], [class*="overflow"]');
+            if (!target) target = root;
+            let scrollables = [target];
+            root.querySelectorAll('[class*="overflow-y-auto"], [class*="overflow-auto"], .overflow-y-auto, [data-scroll-area]').forEach(el => {
+                if (el.scrollHeight > el.clientHeight + 20 && !scrollables.includes(el)) scrollables.push(el);
+            });
+            const maxSh = Math.max(...scrollables.map(el => el.scrollHeight));
+            target = scrollables.find(el => el.scrollHeight === maxSh) || target;
+            const max = target.scrollHeight - target.clientHeight;
+            if (max <= 0) return { success: true };
+            const newTop = ${sp} != null ? max * ${sp} : (${st ?? 0});
+            target.scrollTop = Math.round(newTop);
             return { success: true };
         } catch(e) { return { error: e.toString() }; }
     })()`;
 
     const res = await cdpEval(cdp, EXP);
-    return res?.success ? res : { error: 'Scroll failed' };
+    if (!res?.success) {
+        console.warn('[remote-scroll] CDP failed:', res?.error);
+    }
+    return res?.success ? res : { error: res?.error || 'Scroll failed' };
 }
 
 export async function setModel(cdp, modelName) {
@@ -578,12 +634,38 @@ export async function getAppState(cdp) {
             if (modeEl) mode = modeEl.innerText;
             
             let model = 'Unknown';
-            const modelKeywords = ['Gemini', 'Claude', 'GPT', 'Sonnet', 'Haiku', 'Opus', 'o1', 'o3', 'gpt-4', 'gpt-3', 'Llama', 'Mistral', 'DeepSeek', 'Qwen'];
-            const modelEl = Array.from(document.querySelectorAll('*')).find(el => {
-                const txt = (el.innerText || '').trim();
-                return el.children.length === 0 && txt.length < 60 && modelKeywords.some(k => txt.includes(k));
-            });
-            if (modelEl) model = modelEl.innerText.trim();
+            const modelKeywords = ['Gemini', 'Claude', 'GPT', 'Sonnet', 'o1', 'o3', 'gpt-4', 'Llama', 'DeepSeek'];
+            
+            // Priority 1: Check elements that look like a model selector button
+            const candidateSelectors = [
+                '[data-tooltip-id*="model"]',
+                'button[aria-haspopup]',
+                '.model-selector',
+                '[class*="model-picker"]'
+            ];
+            
+            for (const sel of candidateSelectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    let txt = el.innerText.trim();
+                    if (txt.toLowerCase().includes('signing') || txt.toLowerCase().includes('loading') || txt.toLowerCase().includes('checking')) continue;
+                    if (modelKeywords.some(k => txt.includes(k))) {
+                        model = txt;
+                        break;
+                    }
+                }
+            }
+            
+            if (model === 'Unknown') {
+                const allEls = Array.from(document.querySelectorAll('*'));
+                const modelEl = allEls.find(el => {
+                    const txt = (el.innerText || '').trim();
+                    if (txt.toLowerCase().includes('signing') || txt.toLowerCase().includes('loading') || txt.toLowerCase().includes('checking')) return false;
+                    return el.children.length === 0 && txt.length < 30 && modelKeywords.some(k => txt.includes(k)) && 
+                           !txt.includes('/') && !txt.includes('*') && !txt.includes('{');
+                });
+                if (modelEl) model = modelEl.innerText.trim();
+            }
             
             return { mode, model };
         } catch(e) { return { mode: 'Unknown', model: 'Unknown' }; }

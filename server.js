@@ -11,7 +11,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { BridgeService } from './api/services/bridge_service.js';
-import { killPortProcess, hashString, isLocalRequest } from './api/services/utils.js';
+import { killPortProcess, hashString, isLocalRequest, getAllLocalIPs } from './api/services/utils.js';
 import { createRoutes } from './api/routes/app_routes.js';
 import { VoiceService } from './api/services/voice_service.js';
 
@@ -73,14 +73,22 @@ async function main() {
     app.use('/', createRoutes(bridge, voiceService, APP_PASSWORD, AUTH_TOKEN, AUTH_COOKIE_NAME));
 
     // 5. WebSocket Handlers
+    wss.on('error', (err) => console.error('👻 WebSocket Server Error:', err));
+
     wss.on('connection', (ws, req) => {
+        const ip = req.socket.remoteAddress;
+        console.log(`📡 New WebSocket connection attempt from: ${ip}`);
+
+        ws.on('error', (err) => console.error('📱 WebSocket Peer Error:', err));
+
         if (!isLocalRequest(req)) {
             const rawCookies = req.headers.cookie || '';
             const token = rawCookies.split(';').find(c => c.trim().startsWith(AUTH_COOKIE_NAME))?.split('=')[1];
             const decoded = token ? cookieParser.signedCookie(decodeURIComponent(token), 'nexus_secret_key_v2') : null;
             if (decoded !== AUTH_TOKEN) {
+                console.log(`📡 WebSocket auth failed for ${ip} (remote access requires login)`);
                 ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));
-                return setTimeout(() => ws.close(), 100);
+                return setTimeout(() => ws.close(1008, 'Policy violation: authentication required'), 100);
             }
         }
         console.log('📱 Client connected (Authenticated)');
@@ -88,11 +96,11 @@ async function main() {
         ws.on('message', (message) => {
             try {
                 const data = JSON.parse(message);
-                console.log('📬 Client Message:', data.type);
+                if (data.type !== 'voice_audio') console.log('📬', data.type);
                 if (data.type === 'voice_start') {
                     voiceService.startSession(ws);
                 } else if (data.type === 'voice_stop') {
-                    voiceService.stopSession();
+                    voiceService.requestStop();
                 } else if (data.type === 'voice_audio') {
                     voiceService.handleClientAudio(data.data);
                 }
@@ -109,7 +117,11 @@ async function main() {
     // 6. Start Services
     server.listen(SERVER_PORT, () => {
         const protocol = hasSSL ? 'https' : 'http';
+        const ips = getAllLocalIPs();
         console.log(`📡 Server active at ${protocol}://localhost:${SERVER_PORT}`);
+        ips.forEach(ip => {
+            console.log(`📱 Mobile Link: ${protocol}://${ip}:${SERVER_PORT}`);
+        });
     });
 
     bridge.startPolling();

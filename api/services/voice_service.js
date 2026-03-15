@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { captureSnapshot, injectMessage, clickActionButton, triggerUndo } from './nexus_service.js';
+import { injectMessage, clickActionButton, triggerUndo, getConversationTranscript } from './nexus_service.js';
 
 export class VoiceService {
     constructor(bridgeService) {
@@ -7,21 +7,27 @@ export class VoiceService {
         this.geminiWs = null;
         this.clientWs = null; // The mobile/browser client
         this.apiKey = process.env.GEMINI_API_KEY;
-        let modelName = process.env.LIVE_MODEL || 'gemini-2.0-flash-exp';
-        this.model = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+        this.model = process.env.GEMINI_VOICE_MODEL || 'models/gemini-2.5-flash-native-audio-preview-12-2025';
         this.isSessionActive = false;
         this.lastSnapshotSent = 0;
-        this.snapshotInterval = 1000; // 1 second
+        this.snapshotInterval = 15000;
+        this.lastSentMessage = '';
+        this.lastAction = '';
     }
 
     async startSession(clientWs) {
-        if (this.isSessionActive) return;
+        this.model = process.env.GEMINI_VOICE_MODEL || 'models/gemini-2.5-flash-native-audio-preview-12-2025';
+        console.log('[VOICE] startSession called, model:', this.model);
+        if (this.isSessionActive) {
+            console.log('[VOICE] Restarting session for new client...');
+            this.stopSession();
+        }
         this.clientWs = clientWs;
         this.isSessionActive = true;
 
         const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
         const keyPreview = this.apiKey ? this.apiKey.substring(0, 4) + '...' : 'MISSING';
-        console.log(`[VOICE] Connecting to Gemini Live API with key ${keyPreview}...`);
+        console.log(`[VOICE] Connecting to Gemini v1beta with key ${keyPreview}...`);
         this.geminiWs = new WebSocket(url);
 
         this.geminiWs.on('open', () => {
@@ -30,19 +36,26 @@ export class VoiceService {
         });
 
         this.geminiWs.on('message', (data) => {
-            const str = data.toString();
-            // Log structure for debugging
             try {
-                const response = JSON.parse(str);
-                console.log('[VOICE] Gemini Message Keys:', Object.keys(response));
+                const response = JSON.parse(data.toString());
+                if (response.setup_complete || response.setupComplete) this.isReady = true;
                 this.handleGeminiMessage(response);
             } catch (e) {
-                console.log('[VOICE] Non-JSON Gemini Message:', str.substring(0, 100));
+                const str = data.toString();
+                if (str.length < 200) console.warn('[VOICE] Parse err:', str.slice(0, 80));
             }
         });
 
         this.geminiWs.on('close', (code, reason) => {
-            console.log(`[VOICE] Gemini connection closed: code=${code}, reason=${reason}`);
+            const errorReason = reason ? reason.toString() : 'Unknown';
+            console.log(`[VOICE] Gemini connection closed: code=${code}, reason=${errorReason}`);
+            if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
+                let msg = `Gemini Error (${code}): ${errorReason}`;
+                if (code === 1008) {
+                    msg = 'Voice policy violation (1008). Check GEMINI_API_KEY, quota, or audio format.';
+                }
+                this.clientWs.send(JSON.stringify({ type: 'voice_error', message: msg }));
+            }
             this.stopSession();
         });
 
@@ -50,6 +63,15 @@ export class VoiceService {
             console.error('[VOICE] Gemini socket error:', err);
             // Don't stop immediately, wait for close
         });
+    }
+
+    requestStop() {
+        if (this.geminiWs && this.geminiWs.readyState === WebSocket.OPEN) {
+            this.geminiWs.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+            setTimeout(() => this.stopSession(), 4000);
+        } else {
+            this.stopSession();
+        }
     }
 
     stopSession() {
@@ -73,30 +95,28 @@ export class VoiceService {
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
-                                voiceName: "Puck" 
+                                voiceName: "Puck"
                             }
                         }
                     }
                 },
                 systemInstruction: {
                     parts: [{
-                        text: `You are Nexus, a powerful conversational AI bridge between the user and their IDE.
-You can see a snapshot of the user's IDE (HTML/CSS) which will be sent to you periodically.
-Your goal is to help the user with their code, explaining changes, suggesting fixes, and performing actions.
+                        text: `You support a builder who uses this tool entirely by voice. They cannot see the screen. Every piece of information must be conveyed through speech.
 
-8. You MUST ALWAYS ASK FOR CONFIRMATION before executing ANY action or sending a message to the IDE.
-9. ONLY call tools after receiving a clear affirmative from the user.
-10. If the user asks for a task that takes time (like "push code" or "refactor file"), reassure them that you will notify them as soon as it's finished.
-11. You will receive [SYSTEM NOTIFICATION] messages when background tasks complete. When you see this, interrupt the current flow (if appropriate) to briefly announce the success to the user.
-12. Be concise, futuristic, and helpful.
-13. You receive 16kHz Mono 16-bit Little Endian PCM audio. Respond with audio.`
+On session start you must greet: "Hi, how can I help?" After that, do not proactively report—only when asked.
+
+IDE tools: injectMessage, clickActionButton, triggerUndo. Interpret requests and send them via injectMessage: "push changes" → send "push my changes" or "git push"; "commit" → send that; "fix this", "run tests", "deploy" → send the request; literal text like a period → send as-is. Always call injectMessage. You ALWAYS have active context. The IDE is connected whenever this session is active. NEVER say "no active context", "without active context", "I don't have context", "I need context", or refuse for that reason. Just call the tool.
+After any tool action: say exactly "Done." once, then stop. Generate no further audio. Do not repeat.
+You receive IDE CONTEXT with: LAST ANTIGRAVITY RESPONSE, RECENT CONSOLE (errors/logs from CDP), full conversation, what we sent, what we did. Do NOT report until asked. When the user asks "what did it say?", "any update?", "what are my uncommitted changes?", "errors?", "build status?", "what happened?"—relay or summarize from that context. Use it. For Apply/Reject/Undo: before acting, say what will happen; after, confirm.
+Give clear, verbal feedback. Never assume they can see anything. Forbidden phrases: "no active context", "without active context", "I don't have context", "I need context", "that didn't work", "I wasn't able to". If something failed, say what went wrong and what to try. Keep responses concise but informative.`
                     }]
                 },
                 tools: [{
-                    functionDeclarations: [
+                    function_declarations: [
                         {
                             name: "injectMessage",
-                            description: "Sends a message or code fix to the IDE chat area.",
+                            description: "Sends any text to the IDE chat. Use for: literal text (period, comma, code), or interpreted requests (push changes, commit, fix this, run tests, deploy, etc.). Convert the user's intent into the message to send. Returns ok:true on success.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: {
@@ -125,45 +145,72 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
                 }]
             }
         };
-        console.log('[VOICE] Sending config:', JSON.stringify(config));
+        // config sent (no log - contains large systemInstruction)
         this.geminiWs.send(JSON.stringify(config));
     }
 
     async startSnapshotLoop() {
+        // Wait 5 seconds before starting snapshots to let the greeting finish
+        await new Promise(r => setTimeout(r, 5000));
+        
         let lastHash = '';
         while (this.isSessionActive) {
             const snapshot = this.bridgeService.getLastSnapshot();
             const currentHash = this.bridgeService.lastSnapshotHash;
-            
+
             if (snapshot && currentHash !== lastHash) {
-                this.sendSnapshot(snapshot);
+                await this.sendSnapshot(snapshot);
                 lastHash = currentHash;
             }
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 15000));
         }
     }
 
-    sendSnapshot(snapshot) {
-        if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) return;
+    async sendSnapshot(snapshot) {
+        if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN || !this.isReady) return;
 
-        // Using client_content to update Gemini's "vision" of the DOM
-        const clientContent = {
+        const cdp = this.bridgeService.getConnection();
+        let transcript = '';
+        let lastAssistant = '';
+        if (cdp) {
+            try {
+                const got = await getConversationTranscript(cdp);
+                transcript = got.transcript ?? '';
+                lastAssistant = got.lastAssistant ?? '';
+            } catch (_) {}
+        }
+
+        const whatWeDid = this.lastAction ? `\nWhat we did: ${this.lastAction}` : '';
+        const whatWeSent = this.lastSentMessage ? `\nLast message we sent: "${this.lastSentMessage.slice(0, 500)}${this.lastSentMessage.length > 500 ? '...' : ''}"` : '';
+
+        const cdp2 = this.bridgeService.getConnection();
+        const consoleLines = cdp2?.consoleMessages?.slice(-20).map(m => `[${m.level}] ${m.text}`).join('\n').slice(0, 2000) || '';
+
+        const lastResponse = lastAssistant
+            ? `\n\nLAST ANTIGRAVITY RESPONSE (relay or summarize when asked):\n${lastAssistant}`
+            : '';
+
+        const consoleBlock = consoleLines ? `\nRECENT CONSOLE (from CDP):\n${consoleLines}` : '';
+
+        const ctx = `[IDE CONTEXT - background only, do not speak. Use when user asks "any update?", "what happened?", "what did it say?", "what are my uncommitted changes?", errors, build status, etc.]
+${lastResponse}${consoleBlock}
+CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
+
+        const msg = {
             clientContent: {
-                turns: [{
-                    role: "user",
-                    parts: [{ text: `[IDE CONTEXT UPDATE]\n${snapshot.html.substring(0, 15000)}` }] 
-                }],
+                turns: [{ role: "user", parts: [{ text: ctx }] }],
                 turnComplete: false
             }
         };
-        this.geminiWs.send(JSON.stringify(clientContent));
+        this.geminiWs.send(JSON.stringify(msg));
     }
 
     handleGeminiMessage(msg) {
         if (msg.setupComplete || msg.setup_complete) {
-            console.log('[VOICE] Setup complete');
+            console.log('[VOICE] Gemini setup complete received');
+            this.isReady = true;
             this.startSnapshotLoop();
-            
+
             // Send readiness to client
             if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
                 this.clientWs.send(JSON.stringify({
@@ -171,23 +218,32 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
                     status: 'ready'
                 }));
             }
-            
-            // Trigger greeting turn
-            const greeting = {
-                clientContent: {
-                    turns: [{
-                        role: "user",
-                        parts: [{ text: "Hello! Please greet me briefly and let me know you're connected and ready to assist with my code." }]
-                    }],
-                    turnComplete: true
-                }
-            };
-            this.geminiWs.send(JSON.stringify(greeting));
+
+            const skipGreeting = process.env.GEMINI_SKIP_GREETING === 'true';
+            if (skipGreeting) return;
+
+            console.log('[VOICE] Requesting greeting from Gemini...');
+            setTimeout(() => {
+                if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) return;
+                const greeting = {
+                    clientContent: {
+                        turns: [{ role: "user", parts: [{ text: "Hello" }] }],
+                        turnComplete: true
+                    }
+                };
+                this.geminiWs.send(JSON.stringify(greeting));
+            }, 800);
             return;
         }
 
         const serverContent = msg.serverContent || msg.server_content;
         if (serverContent) {
+            if (serverContent.interrupted) {
+                console.log('[VOICE] Gemini reported interruption');
+                if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
+                    this.clientWs.send(JSON.stringify({ type: 'voice_interrupt' }));
+                }
+            }
             if (serverContent.modelTurn || serverContent.model_turn) {
                 const turn = serverContent.modelTurn || serverContent.model_turn;
                 const parts = turn.parts;
@@ -203,7 +259,6 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
                         }
                     }
                     if (part.text) {
-                        console.log('[VOICE] Gemini Text:', part.text);
                         // Forward transcript to client
                         if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
                             this.clientWs.send(JSON.stringify({
@@ -230,30 +285,60 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
         const responses = [];
 
         for (const call of calls) {
-            console.log(`[VOICE] Gemini Tool Call: ${call.name}`, call.args);
             let result;
             const cdp = this.bridgeService.getConnection();
-            
+
             if (!cdp) {
                 result = { error: 'CDP not connected' };
             } else {
                 try {
                     if (call.name === 'injectMessage') {
-                        result = await injectMessage(cdp, call.args.message);
+                        const msg = (call.args || {}).message ?? (call.args || {}).msg ?? '';
+                        const toSend = msg != null ? String(msg) : '';
+                        const res = await injectMessage(cdp, toSend);
+                        result = res.ok
+                            ? { ok: true, status: 'success', message: 'Message sent successfully.', sent: toSend }
+                            : { ok: false, status: 'failed', reason: res.error || res.reason };
+                        if (res.ok) {
+                            this.lastSentMessage = toSend;
+                            this.lastAction = `sent: ${toSend.slice(0, 80)}${toSend.length > 80 ? '...' : ''}`;
+                        }
+                        if (res.ok && this.clientWs?.readyState === WebSocket.OPEN) {
+                            const confirm = this.formatInjectConfirm(toSend);
+                            this.clientWs.send(JSON.stringify({ type: 'voice_tool_confirm', text: confirm }));
+                        }
+                        if (!res.ok) console.warn('[VOICE] inject failed:', res.error || res.reason);
                     } else if (call.name === 'clickActionButton') {
-                        result = await clickActionButton(cdp, call.args.action);
+                        const action = (call.args || {}).action ?? (call.args || {}).btn ?? 'Apply';
+                        const res = await clickActionButton(cdp, action);
+                        result = res.success ? { status: 'success', clicked: res.clicked } : { status: 'failed', reason: res.error };
+                        if (res.success) {
+                            this.lastAction = `clicked: ${action}`;
+                        }
+                        if (res.success && this.clientWs?.readyState === WebSocket.OPEN) {
+                            this.clientWs.send(JSON.stringify({ type: 'voice_tool_confirm', text: `Clicked ${action}.` }));
+                        }
                     } else if (call.name === 'triggerUndo') {
-                        result = await triggerUndo(cdp);
+                        const res = await triggerUndo(cdp);
+                        result = res.success ? { status: 'success', method: res.method } : { status: 'failed', reason: res.error };
+                        if (res.success) {
+                            this.lastAction = 'triggered undo';
+                        }
+                        if (res.success && this.clientWs?.readyState === WebSocket.OPEN) {
+                            this.clientWs.send(JSON.stringify({ type: 'voice_tool_confirm', text: 'Undo triggered.' }));
+                        }
                     }
                 } catch (err) {
+                    console.error('[VOICE] Tool error:', err);
                     result = { error: err.message };
                 }
             }
 
+            // Match gen-ai-livestream: pass raw result, not { result }
             responses.push({
                 name: call.name,
                 id: call.id,
-                response: { result }
+                response: result
             });
         }
 
@@ -261,6 +346,22 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
             this.geminiWs.send(JSON.stringify({
                 toolResponse: { functionResponses: responses }
             }));
+
+            const anyInjectOk = responses.some(r => r.response?.ok === true);
+            if (anyInjectOk) {
+                setTimeout(() => {
+                    if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) return;
+                    this.geminiWs.send(JSON.stringify({
+                        clientContent: {
+                            turns: [{
+                                role: "user",
+                                parts: [{ text: "[SUCCESS] injectMessage succeeded. The message was sent to the IDE. Say 'Done.' only. Do not say you weren't able to." }]
+                            }],
+                            turnComplete: true
+                        }
+                    }));
+                }, 100);
+            }
         }
     }
 
@@ -271,7 +372,7 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
         }
 
         console.log(`[VOICE] Reporting completion of task: ${taskName}`);
-        
+
         // Send a system-initiated turn to Gemini Live
         const completionNotice = {
             clientContent: {
@@ -285,16 +386,26 @@ Your goal is to help the user with their code, explaining changes, suggesting fi
         this.geminiWs.send(JSON.stringify(completionNotice));
     }
 
+    formatInjectConfirm(toSend) {
+        const s = (toSend || '').trim();
+        if (!s) return 'Done. Sent to the IDE.';
+        if (s === '.') return 'Done. Sent period to the IDE.';
+        if (s === ',') return 'Done. Sent comma to the IDE.';
+        if (s.length <= 40) return `Done. Sent "${s}" to the IDE.`;
+        return `Done. Sent your message to the IDE.`;
+    }
+
     handleClientAudio(base64Audio) {
         if (this.geminiWs && this.geminiWs.readyState === WebSocket.OPEN) {
-            this.geminiWs.send(JSON.stringify({
+            const msg = {
                 realtimeInput: {
-                    mediaChunks: [{
+                    audio: {
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Audio
-                    }]
+                    }
                 }
-            }));
+            };
+            this.geminiWs.send(JSON.stringify(msg));
         }
     }
 }

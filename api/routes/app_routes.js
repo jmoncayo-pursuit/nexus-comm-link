@@ -173,6 +173,13 @@ export function createRoutes(bridgeService, voiceService, appPassword, authToken
         res.json(await inspectUI(cdp));
     });
 
+    router.get('/scroll-debug', async (req, res) => {
+        const cdp = bridgeService.getConnection();
+        if (!cdp) return res.status(503).json({ error: 'CDP not connected' });
+        const info = await NexusService.getScrollDebugInfo(cdp);
+        res.json(info);
+    });
+
     // Task Completion Reporting for Voice Agent
     router.post('/task-complete', (req, res) => {
         const { task } = req.body;
