@@ -1,3 +1,8 @@
+---
+name: Nexus Strategic Bridge 🛰️
+description: A high-performance multimodal bridge for Antigravity focusing on real-time vision-based IDE remote control and action relay.
+---
+
 # Skill: Nexus Strategic Bridge 🛰️
 
 Procedural knowledge for maintaining, debugging, and extending the **Nexus Comm-Link** neural bridge.
