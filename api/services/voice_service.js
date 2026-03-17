@@ -163,7 +163,7 @@ Keep responses concise but informative.`
                 await this.sendSnapshot(snapshot);
                 lastHash = currentHash;
             }
-            await new Promise(r => setTimeout(r, 15000));
+            await new Promise(r => setTimeout(r, 5000));
         }
     }
 
@@ -425,7 +425,7 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
     }
 
     handleClientAudio(base64Audio) {
-        if (this.geminiWs && this.geminiWs.readyState === WebSocket.OPEN) {
+        if (this.geminiWs && this.geminiWs.readyState === WebSocket.OPEN && this.isReady) {
             const msg = {
                 realtimeInput: {
                     audio: {
@@ -435,6 +435,8 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
                 }
             };
             this.geminiWs.send(JSON.stringify(msg));
+        } else if (!this.isReady) {
+            // Buffer or drop audio if not ready to avoid 1008
         }
     }
 }
