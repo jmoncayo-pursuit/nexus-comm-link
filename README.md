@@ -18,7 +18,18 @@
 - **Context Coupling**: Streams high-fidelity DOM snapshots allowing the agent to "read" internal IDE reasoning and thought blocks.
 - **Global Access**: Optional secure tunneling via ngrok for remote connectivity over mobile data.
 - **Scroll Synchronization**: Syncs viewport positions between mobile and desktop.
+- **Accessibility (Vision for the Visionless)**: Real-time semantic voice guidance for developers with visual impairments.
 - **HTTPS Support**: Encrypted connections via automated SSL generation.
+- **Agentic Resilience**: Self-healing CDP connection targeting Port 9222.
+
+---
+
+## Accessibility: Vision for the Visionless
+
+Nexus Comm-Link is more than a mobility tool; it is a **semantic screen-reader** for the agentic age. 
+1. **Auditory Grounding**: Gemini Multimodal Live translates the IDE's visual state into natural language, letting visually impaired developers "hear" the workspace changes.
+2. **Tactical Commands**: Allows interaction with complex IDE components through voice that otherwise lack clear screen-reader support.
+3. **Inclusive Workspace**: Breaks the "single screen" barrier, allowing haptic and audio-driven development sessions.
 
 ---
 
