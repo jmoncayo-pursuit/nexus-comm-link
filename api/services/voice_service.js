@@ -109,9 +109,6 @@ export class VoiceService {
                         }
                     }
                 },
-                realtimeInputConfig: {
-                    automaticActivityDetection: true
-                },
                 systemInstruction: {
                     parts: [{
                         text: `You are the collaborative eyes for a blind software engineer. Your purpose is providing deep situational awareness and brainstorming support.
