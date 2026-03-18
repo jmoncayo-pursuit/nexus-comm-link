@@ -110,13 +110,7 @@ export class VoiceService {
                     }
                 },
                 realtimeInputConfig: {
-                    automaticActivityDetection: {
-                        voiceActivityDetection: {
-                            config: {
-                                silenceDetectionThreshold: 0.1
-                            }
-                        }
-                    }
+                    automaticActivityDetection: true
                 },
                 systemInstruction: {
                     parts: [{
