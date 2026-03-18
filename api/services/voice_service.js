@@ -109,14 +109,6 @@ export class VoiceService {
                         }
                     }
                 },
-                automaticActivityDetection: {
-                    voiceActivityDetection: {
-                        config: {
-                            pre_utterance_read_time_ms: 200,
-                            silence_detection_threshold: 0.1
-                        }
-                    }
-                },
                 systemInstruction: {
                     parts: [{
                         text: `You are the eyes for a blind software engineer. Your purpose is to provide situational awareness and collaborative pair-programming.
