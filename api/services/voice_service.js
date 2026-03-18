@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
-import { injectMessage, clickActionButton, triggerUndo, getConversationTranscript, captureScreenshot } from './nexus_service.js';
+import { injectMessage, clickActionButton, triggerUndo, getConversationTranscript, captureScreenshot, isSafe } from './nexus_service.js';
+import { SecurityService } from './security_service.js';
 
 export class VoiceService {
     constructor(bridgeService) {
@@ -13,6 +14,7 @@ export class VoiceService {
         this.snapshotInterval = 15000;
         this.lastSentMessage = '';
         this.lastAction = '';
+        this.security = new SecurityService();
     }
 
     async startSession(clientWs) {
@@ -48,8 +50,15 @@ export class VoiceService {
 
         this.geminiWs.on('close', (code, reason) => {
             const errorReason = reason ? reason.toString() : 'Unknown';
-            console.log(`[VOICE] Gemini connection closed: code=${code}, reason=${errorReason}`);
-            if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
+            const isNormalClosure = (code === 1000 || code === 1001 || code === 1005);
+            
+            if (!isNormalClosure) {
+                console.error(`[VOICE] Gemini connection closed unexpectedly: code=${code}, reason=${errorReason}`);
+            } else {
+                console.log(`[VOICE] Gemini connection closed normally: code=${code}`);
+            }
+
+            if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN && !isNormalClosure) {
                 let msg = `Gemini Error (${code}): ${errorReason}`;
                 if (code === 1008) {
                     msg = 'Voice policy violation (1008). Check GEMINI_API_KEY, quota, or audio format.';
@@ -203,6 +212,13 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
                 turnComplete: false
             }
         };
+
+        // MODEL ARMOR: Intercept Prompt
+        if (!this.security.validatePrompt(ctx)) {
+            console.warn('🛡️ [VOICE] Model Armor blocked context snapshot:', ctx.substring(0, 100));
+            return;
+        }
+
         this.geminiWs.send(JSON.stringify(msg));
     }
 
@@ -261,11 +277,14 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
                         }
                     }
                     if (part.text) {
+                        // RESPONSE SCRUBBING
+                        const safeText = this.security.scrubResponse(part.text);
+                        
                         // Forward transcript to client
                         if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
                             this.clientWs.send(JSON.stringify({
                                 type: 'voice_transcript',
-                                text: part.text
+                                text: safeText
                             }));
                         }
                     }

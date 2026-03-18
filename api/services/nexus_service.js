@@ -1,3 +1,6 @@
+import { SecurityService } from './security_service.js';
+const security = new SecurityService();
+
 async function cdpEval(cdp, expression, opts = {}) {
     const contexts = cdp.contexts || [{ id: undefined }];
     for (const ctx of contexts) {
@@ -307,20 +310,8 @@ export async function getConversationTranscript(cdp) {
     return { transcript: res?.transcript ?? '', lastAssistant: res?.lastAssistant ?? '' };
 }
 
-// --- BUNKER SECURITY LAYER ---
-const DANGER_PATTERNS = [
-    /\brm\s+-rf\b/i, /\bsudo\b/i, /\bchmod\b/i, /\bchown\b/i, 
-    /\bsh\b\s+/, /\bbash\b\s+/, /\bpython\b\s+/, /\bnode\b\s+/,
-    /\bcurl\b/i, /\bwget\b/i, /\bssh\b/i, /\bkill\b -9/i,
-    /\/> / , /@shell/, /@terminal/, /@system/
-];
-
-function isSafe(text) {
-    const s = String(text || '').toLowerCase();
-    for (const pattern of DANGER_PATTERNS) {
-        if (pattern.test(s)) return false;
-    }
-    return true;
+export function isSafe(text) {
+    return security.validatePrompt(text);
 }
 
 export async function injectMessage(cdp, text) {
