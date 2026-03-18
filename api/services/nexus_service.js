@@ -307,8 +307,31 @@ export async function getConversationTranscript(cdp) {
     return { transcript: res?.transcript ?? '', lastAssistant: res?.lastAssistant ?? '' };
 }
 
+// --- BUNKER SECURITY LAYER ---
+const DANGER_PATTERNS = [
+    /\brm\s+-rf\b/i, /\bsudo\b/i, /\bchmod\b/i, /\bchown\b/i, 
+    /\bsh\b\s+/, /\bbash\b\s+/, /\bpython\b\s+/, /\bnode\b\s+/,
+    /\bcurl\b/i, /\bwget\b/i, /\bssh\b/i, /\bkill\b -9/i,
+    /\/> / , /@shell/, /@terminal/, /@system/
+];
+
+function isSafe(text) {
+    const s = String(text || '').toLowerCase();
+    for (const pattern of DANGER_PATTERNS) {
+        if (pattern.test(s)) return false;
+    }
+    return true;
+}
+
 export async function injectMessage(cdp, text) {
     const safe = String(text ?? '');
+    
+    // BUNKER CHECK: Stop shell injection attempts
+    if (!isSafe(safe)) {
+        console.warn('🛡️ [BUNKER] Blocked potentially dangerous injection:', safe.substring(0, 100));
+        return { ok: false, error: "security_violation", reason: "The request contains potentially destructive commands and was blocked for your protection." };
+    }
+
     const safeText = JSON.stringify(safe);
     const EXPRESSION = `(async () => {
         const cancel = document.querySelector('[data-tooltip-id="input-send-button-cancel-tooltip"]');
@@ -420,6 +443,13 @@ export async function clickElement(cdp, { selector, index, textContent }) {
 // === REMOTE ACTION RELAY ===
 // Robust button finder for Apply/Accept/Reject actions
 export async function clickActionButton(cdp, actionText) {
+    // BUNKER CHECK: Prevent clicking destructive UI buttons
+    const dangerousActions = ['delete', 'wipe', 'format', 'erase', 'purge', 'destroy', 'terminate'];
+    if (dangerousActions.some(d => String(actionText).toLowerCase().includes(d))) {
+        console.warn('🛡️ [BUNKER] Blocked destructive action click:', actionText);
+        return { error: 'security_violation', reason: 'Destructive clicks are disabled in bridged mode.' };
+    }
+
     const safeText = JSON.stringify(actionText);
     const EXP = `(() => {
         try {
