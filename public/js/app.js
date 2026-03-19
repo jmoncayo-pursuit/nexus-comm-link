@@ -190,8 +190,14 @@ function connectWebSocket() {
         }
         if (data.type === 'voice_interrupt') {
             const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
-            if (window.nexusVoice && sessionDuration > 2000) {
+            if (window.nexusVoice && sessionDuration > 4000) {
                 window.nexusVoice.interrupt();
+            }
+        }
+        if (data.type === 'voice_stop') {
+            if (window.nexusVoice) {
+                window.nexusVoice.stop();
+                showToast('Nexus disconnected voice link', 'info');
             }
         }
         if (data.type === 'voice_tool_confirm') {
@@ -211,6 +217,8 @@ function connectWebSocket() {
                 last1008ToastAt = now;
                 showToast('Session rejected (1008). Log in again for remote access.', 'error');
             }
+        } else if (code !== 1000) { // 1000 is normal closure
+            showToast('Disconnected from Nexus. Reconnecting...', 'error');
         }
         updateStatus(false, false);
         setTimeout(connectWebSocket, 2000);
@@ -1988,11 +1996,12 @@ class NexusVoice {
         if (this.isActive) return;
         window.voiceSessionStart = Date.now();
         this.nextPlayTime = 0;
+        this.isReady = false; 
         console.log('[VOICE] Starting voice session...');
         if (this.liveBtn) this.liveBtn.classList.add('active');
-        if (this.transcriptEl) this.transcriptEl.textContent = "Connecting to Gemini...";
+        if (this.transcriptEl) this.transcriptEl.textContent = "Re-aligning...";
         try {
-            showToast('Initializing Audio...', 'info');
+            showToast('Re-initiating Audio...', 'info');
             // Allow native rate for better stability, but log what we get
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             showToast(`Audio Rate: ${this.ctx.sampleRate}Hz`, 'info');
@@ -2028,7 +2037,7 @@ class NexusVoice {
                 // Mute only during initial greeting to prevent self-trigger,
                 // but ALLOW transmission during conversation for Barge-In detection.
                 const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
-                if (sessionDuration < 2500) return;
+                if (sessionDuration < 4000) return;
                 
                 const inputData = e.inputBuffer.getChannelData(0);
                 

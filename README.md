@@ -127,4 +127,4 @@ To verify the integration and the **Gemini Multimodal Live** connection, follow 
 ## License
 
 This project is proprietary. Copyright (c) 2026 **Jean Moncayo**. All rights reserved. 
-Source code is provided exclusively for evaluation by the Gemini Multimodal Live API Developer Challenge judges. Commercial use is prohibited. See the [LICENSE](LICENSE) file for full details.
+Source code is provided exclusively for evaluation by the Gemini Multimodal Live API Developer Challenge organizers. Commercial use is prohibited. See the [LICENSE](LICENSE) file for full details.

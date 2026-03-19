@@ -96,13 +96,13 @@ def print_qr(url):
 
 def launch_editor(target):
     """Attempts to launch the target editor/browser with remote debugging enabled."""
-    print(f"🎯 Attempting to launch and link: {target.upper()}...")
+    print(f"Attempting to launch and link: {target.upper()}...")
     
     cmds = {
         'antigravity': {
-            'darwin': ["/Applications/Antigravity.app/Contents/MacOS/Electron", ".", "--remote-debugging-port=9000"],
-            'linux': ["antigravity", ".", "--remote-debugging-port=9000"],
-            'win32': [os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'antigravity', 'Antigravity.exe'), ".", "--remote-debugging-port=9000"]
+            'darwin': ["/Applications/Antigravity.app/Contents/MacOS/Electron", ".", "--remote-debugging-port=9222"],
+            'linux': ["antigravity", ".", "--remote-debugging-port=9222"],
+            'win32': [os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'antigravity', 'Antigravity.exe'), ".", "--remote-debugging-port=9222"]
         }
     }
     
@@ -111,7 +111,7 @@ def launch_editor(target):
 
     platform = sys.platform
     if platform not in ['darwin', 'linux', 'win32']:
-        print(f"⚠️  Auto-launch not supported on {platform} yet.")
+        print(f"Auto-launch not supported on {platform} yet.")
         return
 
     cmd = cmds[target].get(platform if platform in ['darwin', 'win32'] else 'linux')
@@ -121,7 +121,7 @@ def launch_editor(target):
     try:
         # Check if the binary exists for macOS/Windows
         if platform == 'darwin' and not os.path.exists(cmd[0]):
-            print(f"❌ Could not find Antigravity at {cmd[0]}")
+            print(f"Could not find Antigravity at {cmd[0]}")
             return
         elif platform == 'win32':
             # Fallback for Windows if not in LocalAppData
@@ -129,10 +129,10 @@ def launch_editor(target):
                 cmd[0] = "antigravity.exe" # Try in PATH
                 
         subprocess.Popen(cmd, shell=(platform == 'win32'), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"✅ Launched Antigravity with --remote-debugging-port=9000")
+        print(f"Launched Antigravity with --remote-debugging-port=9222")
         time.sleep(2)
     except Exception as e:
-        print(f"❌ Failed to launch {target}: {e}")
+        print(f"Failed to launch {target}: {e}")
 
 # -----------------------------------------------------------------------------
 # Main Execution
@@ -166,10 +166,10 @@ def main():
     if not passcode:
         passcode = generate_passcode()
         os.environ['APP_PASSWORD'] = passcode # Set for child process
-        print(f"⚠️  No APP_PASSWORD in .env. Using temporary: {passcode}")
+        print(f"No APP_PASSWORD in .env. Using temporary: {passcode}")
 
     # 2. Start Node.js Server (Common to both modes)
-    print(f"🚀 Starting Nexus Server ({args.mode.upper()} mode)...")
+    print(f"Starting Nexus Server ({args.mode.upper()} mode)...")
     
     # Try to setup logs, but don't crash if we can't write to the directory
     log_file_path = "server_log.txt"
@@ -179,7 +179,7 @@ def main():
             f.write(f"--- Server Started at {time.ctime()} ---\n")
         log_file = open(log_file_path, "a")
     except Exception as e:
-        print(f"⚠️  Warning: Cannot write to {log_file_path} ({e}). Logging to console only.")
+        print(f"Warning: Cannot write to {log_file_path} ({e}). Logging to console only.")
 
     # We use node to ensure background stability
     node_cmd = ["node", "server.js"]
@@ -198,11 +198,11 @@ def main():
             
         time.sleep(2) # Give it a moment to crash if it's going to
         if node_process.poll() is not None:
-            print("❌ Server failed to start immediately. Check server_log.txt.")
+            print("Server failed to start immediately. Check server_log.txt.")
             sys.exit(1)
             
     except Exception as e:
-        print(f"❌ Failed to launch node: {e}")
+        print(f"Failed to launch node: {e}")
         sys.exit(1)
 
     # 3. Mode Specific Logic
@@ -211,7 +211,7 @@ def main():
     try:
         if args.mode == 'local':
             ip = get_local_ip()
-            port = os.environ.get('PORT', '3000')
+            port = os.environ.get('PORT', '3131')
             
             # Detect HTTPS
             protocol = "http"
@@ -221,16 +221,16 @@ def main():
             final_url = f"{protocol}://{ip}:{port}"
             
             print("\n" + "="*50)
-            print(f"📡 LOCAL WIFI ACCESS")
+            print(f"LOCAL WIFI ACCESS")
             print("="*50)
-            print(f"🔗 URL: {final_url}")
-            print(f"🔑 Passcode: Not required for local WiFi (Auto-detected)")
+            print(f"URL: {final_url}")
+            print(f"Passcode: Not required for local WiFi (Auto-detected)")
             
-            print("\n📱 Scan this QR Code to connect:")
+            print("\nScan this QR Code to connect:")
             print_qr(final_url)
 
             print("-" * 50)
-            print("📝 Steps to Connect:")
+            print("Steps to Connect:")
             print("1. Ensure your phone is on the SAME Wi-Fi network as this computer.")
             print("2. Open your phone's Camera app or a QR scanner.")
             print("3. Scan the code above OR manually type the URL into your browser.")
@@ -242,9 +242,9 @@ def main():
             if token:
                 ngrok.set_auth_token(token)
             else:
-                print("⚠️  Warning: NGROK_AUTHTOKEN not found in .env. Tunnel might expire.")
+                print("Warning: NGROK_AUTHTOKEN not found in .env. Tunnel might expire.")
 
-            port = os.environ.get('PORT', '3000')
+            port = os.environ.get('PORT', '3131')
             
             # Detect HTTPS
             protocol = "http"
@@ -286,9 +286,8 @@ def main():
             print(f"5. Enter passcode: {passcode}")
             print("6. You should be connected automatically!")
 
-        print("="*50)
-        print("✅ Server is running in background. Logs -> server_log.txt")
-        print("⌨️  Press Ctrl+C to stop.")
+        print("Server is running in background. Logs -> server_log.txt")
+        print("Press Ctrl+C to stop.")
         
         # Keep alive loop
         last_log_pos = 0

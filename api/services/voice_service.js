@@ -15,6 +15,8 @@ export class VoiceService {
         this.lastSentMessage = '';
         this.lastAction = '';
         this.security = new SecurityService();
+        this.sessionStartTime = 0;
+        this.isGreetingInProgress = false;
     }
 
     async startSession(clientWs) {
@@ -26,6 +28,8 @@ export class VoiceService {
         }
         this.clientWs = clientWs;
         this.isSessionActive = true;
+        this.isReady = false; 
+        this.sessionStartTime = Date.now();
 
         const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
         const keyPreview = this.apiKey ? this.apiKey.substring(0, 4) + '...' : 'MISSING';
@@ -155,7 +159,14 @@ BARGE-IN / INTERRUPTION:
                             parameters: { type: "OBJECT", properties: {} }
                         }
                     ]
-                }]
+                }],
+                realtime_input_config: {
+                    automatic_activity_detection: {
+                        manual_threshold: {
+                            voice_activity_threshold: 0.5
+                        }
+                    }
+                }
             }
         };
         // config sent (no log - contains large systemInstruction)
@@ -216,9 +227,8 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
             }
         };
 
-        // MODEL ARMOR: Intercept Prompt
         if (!this.security.validatePrompt(ctx)) {
-            console.warn('🛡️ [VOICE] Model Armor blocked context snapshot:', ctx.substring(0, 100));
+            console.warn('[VOICE] Model Armor blocked context snapshot:', ctx.substring(0, 100));
             return;
         }
 
@@ -243,16 +253,23 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
             const skipGreeting = process.env.GEMINI_SKIP_GREETING === 'true';
             if (skipGreeting) return;
 
-            console.log('[VOICE] Requesting greeting from Gemini...');
             setTimeout(() => {
                 if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) return;
+                this.isGreetingInProgress = true;
                 const greeting = {
                     clientContent: {
                         turns: [{ role: "user", parts: [{ text: "Hello" }] }],
                         turnComplete: true
                     }
                 };
+                console.log('[VOICE] [' + new Date().toISOString() + '] Sending greeting. Lock active for 4s.');
                 this.geminiWs.send(JSON.stringify(greeting));
+                
+                // Release the lock after 4 seconds (length of most greetings + buffer)
+                setTimeout(() => {
+                    this.isGreetingInProgress = false;
+                    console.log('[VOICE] [' + new Date().toISOString() + '] Greeting lock released.');
+                }, 4000);
             }, 800);
             return;
         }
@@ -260,7 +277,11 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
         const serverContent = msg.serverContent || msg.server_content;
         if (serverContent) {
             if (serverContent.interrupted || serverContent.interruption) {
-                console.log('🛡️ [VOICE] Gemini reported interruption:', serverContent.interrupted ? 'interrupted' : 'interruption');
+                if (this.isGreetingInProgress) {
+                    console.log('[VOICE] [' + new Date().toISOString() + '] Ignoring interruption during greeting window.');
+                    return;
+                }
+                console.log('[VOICE] [' + new Date().toISOString() + '] Gemini reported interruption:', serverContent.interrupted ? 'interrupted' : 'interruption');
                 if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
                     this.clientWs.send(JSON.stringify({ type: 'voice_interrupt' }));
                 }
@@ -456,6 +477,12 @@ CONVERSATION IN IDE:\n${transcript || '(none yet)'}${whatWeSent}${whatWeDid}`;
 
     handleClientAudio(base64Audio) {
         if (this.geminiWs && this.geminiWs.readyState === WebSocket.OPEN && this.isReady) {
+            // Log audio activity every ~5 seconds (at ~50-100 packets/sec)
+            this.audioPackets = (this.audioPackets || 0) + 1;
+            if (this.audioPackets % 250 === 0) {
+                console.log('[VOICE] [' + new Date().toISOString() + '] Audio stream active (transmitting packets)');
+            }
+            
             const msg = {
                 realtimeInput: {
                     audio: {
