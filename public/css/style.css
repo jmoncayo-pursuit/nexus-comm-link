@@ -139,6 +139,7 @@ html {
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    overflow-anchor: none !important; /* Kill the phone's native "helper" jump */
 }
 
 body {
@@ -146,13 +147,11 @@ body {
     background: var(--bg-app);
     color: var(--text-main);
     height: 100%;
-    /* Revert to standard percent height */
     position: relative;
-    /* Remove fixed */
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Keep internal scroll */
+    overflow-anchor: none !important;
 }
 
 
@@ -497,15 +496,17 @@ body {
     overflow-x: hidden;
     position: relative;
     background: var(--bg-app);
-    overflow-anchor: auto; /* Prevent jitter during generation */
-    -webkit-overflow-scrolling: touch;
+    overflow-anchor: none !important; /* Kill the jumper */
+    scroll-behavior: auto !important;
     touch-action: pan-y;
+    overscroll-behavior-y: contain;
 }
 
 .chat-content {
     padding: 8px 12px 4px;
     contain: layout; /* Stabilize content blocks */
     min-height: 100%;
+    overflow-anchor: none !important;
 }
 
 .chat-content * {
@@ -1544,6 +1545,18 @@ textarea::-webkit-scrollbar {
     margin: 4px 0 !important;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
+}
+
+pre {
+    position: relative !important;
+    white-space: pre-wrap !important; 
+    word-break: break-word !important;
+    padding: 2px 4px !important;
+    margin: 0 2px !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+    border-radius: 4px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
 }
 
 .nexus-action-overlay:active {

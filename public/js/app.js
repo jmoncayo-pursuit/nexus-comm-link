@@ -190,14 +190,8 @@ function connectWebSocket() {
         }
         if (data.type === 'voice_interrupt') {
             const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
-            if (window.nexusVoice && sessionDuration > 4000) {
+            if (window.nexusVoice && sessionDuration > 2000) {
                 window.nexusVoice.interrupt();
-            }
-        }
-        if (data.type === 'voice_stop') {
-            if (window.nexusVoice) {
-                window.nexusVoice.stop();
-                showToast('Nexus disconnected voice link', 'info');
             }
         }
         if (data.type === 'voice_tool_confirm') {
@@ -217,8 +211,6 @@ function connectWebSocket() {
                 last1008ToastAt = now;
                 showToast('Session rejected (1008). Log in again for remote access.', 'error');
             }
-        } else if (code !== 1000) { // 1000 is normal closure
-            showToast('Disconnected from Nexus. Reconnecting...', 'error');
         }
         updateStatus(false, false);
         setTimeout(connectWebSocket, 2000);
@@ -574,8 +566,7 @@ async function loadSnapshot(force = false) {
         const cleanedForCompare = data.html
             .replace(/id="[^"]*P0-\d+[^"]*"/g, '')
             .replace(/data-tooltip-id="[^"]*"/g, '')
-            .replace(/data-headlessui-state="[^"]*"/g, '')
-            // Keep class/style/aria in hash to detect Thought expansion
+            // Removed headlessui-state filter to ensure expansion triggers re-render
             .replace(/\s+/g, ' ');
 
         if (cleanedForCompare !== lastHtmlHash) {
@@ -589,26 +580,54 @@ async function loadSnapshot(force = false) {
             });
         }
 
-        // Smart Scroll Handling
+        // THE MIRROR — Instant tracking. No glides, no delays.
+        const performMirror = () => {
+             if (!data.scrollInfo) return;
+             
+             // Respect manual phone precedence (Master Mode)
+             if (Date.now() < userScrollLockUntil) return;
+
+             const sh = chatContainer.scrollHeight;
+             const ch = chatContainer.clientHeight;
+             const max = sh - ch;
+             if (max > 0) {
+                 const target = data.scrollInfo.scrollPercent * max;
+                 // DEADZONE: Ignore tiny bumps (less than MIRROR_THRESHOLD pixels)
+                 if (Math.abs(chatContainer.scrollTop - target) > MIRROR_THRESHOLD) {
+                     chatContainer.scrollTop = target;
+                 }
+             }
+        };
+
+        // Instant Scroll Handling
         if (isFirstLoad) {
-            scrollToBottom('auto');
+            scrollToBottom();
             isFirstLoad = false;
         } else if (isNearTop && anchorInfo) {
-            // ONLY snap back if we updated because we were near the top.
-            // When we load history at the top, the DOM replaces and old messages are prepended.
             const restored = restoreScrollAnchor(chatContainer, anchorInfo);
             if (!restored) {
                 chatContainer.scrollTop = chatContainer.scrollHeight - (scrollHeight - scrollPos);
             }
-        } else if (isNearBottom) {
-            scrollToBottom('auto');
+        } else if (isNearBottom && !userIsScrolling) {
+            scrollToBottom();
+        } else {
+             performMirror();
+        }
+
+        // Initialize ResizeObserver only once
+        if (!window.bottomObserver) {
+            window.bottomObserver = new ResizeObserver(() => {
+                if (isNearBottom && !userIsScrolling) {
+                    scrollToBottom();
+                }
+            });
+            window.bottomObserver.observe(chatContent);
         }
 
         // Defer cosmetic enhancements
         const deferWork = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
         deferWork(() => {
             addMobileCopyButtons();
-            injectActionButtons();
             linkifyFilePaths();
         });
 
@@ -925,16 +944,10 @@ async function copyToClipboard(text) {
     return false;
 }
 
-function scrollToBottom(behavior = 'smooth') {
-    requestAnimationFrame(() => {
-        // Slight delay to allow DOM/images to settle before calculating scrollHeight
-        setTimeout(() => {
-            chatContainer.scrollTo({
-                top: chatContainer.scrollHeight,
-                behavior: behavior
-            });
-        }, 50);
-    });
+function scrollToBottom() {
+    const container = document.getElementById('chatContainer');
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
 }
 
 // --- Inputs ---
@@ -1087,7 +1100,7 @@ messageInput.addEventListener('input', function () {
 // --- Scroll Sync to Desktop ---
 let scrollSyncTimeout = null;
 let lastScrollSync = 0;
-const SCROLL_SYNC_DEBOUNCE = 300;
+const SCROLL_SYNC_DEBOUNCE = 50; // Near-real-time parity
 let snapshotReloadPending = false;
 
 async function syncScrollToDesktop() {
@@ -1188,9 +1201,55 @@ function restoreScrollAnchor(container, anchor) {
     return false;
 }
 
+// --- Scroll Feel Tuning ---
+const MIRROR_THRESHOLD = 10; // Eliminate jitter from IDE layout shifts
+let isGestureActive = false;
+
+function beginScrollGesture() {
+    userScrollLockUntil = Date.now() + 10000; // 10s lockout
+    userIsScrolling = true;
+    autoRefreshEnabled = false;
+    isGestureActive = true;
+    clearTimeout(idleTimer);
+}
+
+function finishScrollGesture() {
+    isGestureActive = false;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(async () => {
+        autoRefreshEnabled = true;
+        userIsScrolling = false;
+        await syncScrollToDesktop();
+        loadSnapshot();
+    }, 250);
+}
+
+chatContainer.addEventListener('pointerdown', () => {
+    beginScrollGesture();
+});
+
+chatContainer.addEventListener('touchstart', () => {
+    beginScrollGesture();
+}, { passive: true });
+
+chatContainer.addEventListener('pointerup', () => {
+    finishScrollGesture();
+});
+
+chatContainer.addEventListener('touchend', () => {
+    finishScrollGesture();
+}, { passive: true });
+
+chatContainer.addEventListener('touchcancel', () => {
+    finishScrollGesture();
+}, { passive: true });
+
+chatContainer.addEventListener('pointercancel', () => {
+    finishScrollGesture();
+});
+
 chatContainer.addEventListener('scroll', () => {
     userIsScrolling = true;
-    userScrollLockUntil = Date.now() + USER_SCROLL_LOCK_DURATION;
     clearTimeout(idleTimer);
 
     const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 50;
@@ -1201,17 +1260,17 @@ chatContainer.addEventListener('scroll', () => {
         scrollToBottomBtn.classList.add('show');
     }
 
-    // Debounced scroll sync to desktop
+    // Near-instant scroll sync to desktop
     const now = Date.now();
-    if (now - lastScrollSync > SCROLL_SYNC_DEBOUNCE) {
+    if (!isGestureActive && now - lastScrollSync > SCROLL_SYNC_DEBOUNCE) {
         lastScrollSync = now;
-        clearTimeout(scrollSyncTimeout);
-        scrollSyncTimeout = setTimeout(syncScrollToDesktop, 100);
+        syncScrollToDesktop(); // Synchronous call for immediacy
     }
 
     idleTimer = setTimeout(async () => {
-        userIsScrolling = false;
+        if (isGestureActive) return;
         autoRefreshEnabled = true;
+        userIsScrolling = false;
         await syncScrollToDesktop();
         loadSnapshot();
     }, 400);
@@ -1220,8 +1279,25 @@ chatContainer.addEventListener('scroll', () => {
 scrollToBottomBtn.addEventListener('click', () => {
     userIsScrolling = false;
     userScrollLockUntil = 0;
-    loadSnapshot(); // Get the latest content
+    
+    // 1. Local snap
     scrollToBottom();
+    
+    // 2. IMMEDIATE IDE sync (The missing piece)
+    // We force a 100% scroll percent to ensure the IDE also anchors
+    const forceBottomSync = async () => {
+        try {
+            await fetchWithAuth('/remote-scroll', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scrollPercent: 1.0 })
+            });
+        } catch(e) {}
+    };
+    forceBottomSync();
+
+    // 3. Final verification pass after layout settles
+    setTimeout(scrollToBottom, 500);
 });
 
 // --- Quick Actions ---
@@ -1996,12 +2072,11 @@ class NexusVoice {
         if (this.isActive) return;
         window.voiceSessionStart = Date.now();
         this.nextPlayTime = 0;
-        this.isReady = false; 
         console.log('[VOICE] Starting voice session...');
         if (this.liveBtn) this.liveBtn.classList.add('active');
-        if (this.transcriptEl) this.transcriptEl.textContent = "Re-aligning...";
+        if (this.transcriptEl) this.transcriptEl.textContent = "Connecting to Gemini...";
         try {
-            showToast('Re-initiating Audio...', 'info');
+            showToast('Initializing Audio...', 'info');
             // Allow native rate for better stability, but log what we get
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             showToast(`Audio Rate: ${this.ctx.sampleRate}Hz`, 'info');
@@ -2037,7 +2112,7 @@ class NexusVoice {
                 // Mute only during initial greeting to prevent self-trigger,
                 // but ALLOW transmission during conversation for Barge-In detection.
                 const sessionDuration = Date.now() - (window.voiceSessionStart || 0);
-                if (sessionDuration < 4000) return;
+                if (sessionDuration < 2500) return;
                 
                 const inputData = e.inputBuffer.getChannelData(0);
                 
